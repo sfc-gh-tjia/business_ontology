@@ -20,8 +20,9 @@
 --   5. APPROVE each relationship using its relationshipId
 -- =============================================================================
 
-USE DATABASE BUSINESS_ONTOLOGY;
-USE SCHEMA PUBLIC;
+USE DATABASE DB_ONTOLOGY_CONTROL_PLANE;
+USE SCHEMA SAP_PRODUCTION;
+USE WAREHOUSE ONTOLOGY_WH;
 
 -- =============================================================================
 -- DOMAIN 1: SAP Purchasing (15 terms)
@@ -48,7 +49,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Purchasing",
   "name": "Material",
   "itemKind": "ENTITY",
-  "description": "Material master entity (MARA). MATKL codes: 043=Electronics, 044=Chemicals, 045=Metals, 046=Polymers, 047=Substrates."
+  "description": "Material master entity (MARA). MATKL codes: 043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials."
 }');
 -- >> Note the returned termId. Then run:
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Material>');
@@ -58,7 +59,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Purchasing",
   "name": "Purchase Order",
   "itemKind": "ENTITY",
-  "description": "Purchasing document (EKPO). STATU: O=Open, C=Confirmed, R=Received. Use NETWR for value, MENGE for quantity."
+  "description": "Purchasing document (EKPO). STATU: O=Open, C=Closed, R=Received. Use NETWR for value, MENGE for quantity."
 }');
 -- >> Note the returned termId. Then run:
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Purchase_Order>');
@@ -78,7 +79,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Purchasing",
   "name": "Carrier",
   "itemKind": "ENTITY",
-  "description": "Forwarding agent (LFA2). VSART: 01=Road, 02=Rail, 03=Sea, 04=Air. OTRAT is self-reported — use LIKP for real OTD."
+  "description": "Forwarding agent (LFA2). VSART: 01=Ocean, 02=FTL, 03=Air, 04=Intermodal, 05=LTL. OTRAT is self-reported — use LIKP for real OTD."
 }');
 -- >> Note the returned termId. Then run:
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Carrier>');
@@ -124,7 +125,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "name": "Operational OTD Rate",
   "itemKind": "METRIC",
   "description": "Real delivery OTD. NOT LFA2.OTRAT (carrier self-reported ~90%).",
-  "formula": "COUNT(CASE WHEN WADAT_IST <= LFDAT THEN 1 END) / COUNT(*) FROM LIKP WHERE STATU=''D''"
+  "formula": "COUNT(CASE WHEN WADAT <= LFDAT THEN 1 END) / COUNT(*) FROM LIKP WHERE STATU=''D''"
 }');
 -- >> Note the returned termId. Then run:
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Operational_OTD_Rate>');
@@ -135,7 +136,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "name": "Total Procurement Spend",
   "itemKind": "METRIC",
   "description": "Confirmed/received POs only. NOT LFB1.JWERT (annual contract values).",
-  "formula": "SUM(NETWR) FROM EKPO WHERE STATU IN (''C'',''R'')"
+  "formula": "SUM(NETWR) FROM EKPO"
 }');
 -- >> Note the returned termId. Then run:
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Total_Procurement_Spend>');
@@ -182,7 +183,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Purchasing",
   "name": "MATKL Material Group Decoder",
   "itemKind": "TERM",
-  "description": "SAP material group codes: 043=Electronics, 044=Chemicals, 045=Metals, 046=Polymers, 047=Substrates"
+  "description": "SAP material group codes: 043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials"
 }');
 -- >> Note the returned termId. Then run:
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_MATKL_Material_Group_Decoder>');
@@ -199,7 +200,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
 
 
 -- =============================================================================
--- DOMAIN 2: SAP Finance (7 terms)
+-- DOMAIN 2: SAP Finance (8 terms)
 -- =============================================================================
 
 SELECT SYSTEM$CREATE_GLOSSARY_DOMAIN('SAP Finance');
@@ -290,7 +291,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
 
 
 -- =============================================================================
--- DOMAIN 3: SAP Sales (7 terms)
+-- DOMAIN 3: SAP Sales (6 terms)
 -- =============================================================================
 
 SELECT SYSTEM$CREATE_GLOSSARY_DOMAIN('SAP Sales');
@@ -339,15 +340,16 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Sales",
   "name": "Disruption Revenue Impact",
   "itemKind": "METRIC",
-  "description": "Revenue at risk from supplier disruption. Uses Formula 12 output.",
+  "description": "Revenue at risk from supplier disruption. Uses Formula 5 (Supplier Disruption Cascade) output.",
   "formula": "Disruption_Cascade assemblies -> VBAP.NETWR"
 }');
 -- >> Note the returned termId. Then run:
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Disruption_Revenue_Impact>');
 
--- Term 27: Cost Center Total
+-- Term 27: Cost Center Total (Finance metric, placed in Sales for cross-domain visibility)
+-- NOTE: This metric queries COEP (finance table) but is relevant to cost allocation decisions
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
-  "domainName": "SAP Sales",
+  "domainName": "SAP Finance",
   "name": "Cost Center Total",
   "itemKind": "METRIC",
   "description": "Filter by OBJNR: KS-MFG-US for US Manufacturing = $419,750.",
@@ -391,84 +393,36 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
 -- =============================================================================
 
 -- Relationship 1: Supplier -> Material (supplies)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_Supplier>",
-  "targetTermId": "<termId_for_Material>",
-  "relationshipType": "RELATED_TO",
-  "description": "supplies"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Supplier>', '<termId_for_Material>', 'RELATED_TO');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_Supplier>', '<termId_for_Material>', 'RELATED_TO');
 
 -- Relationship 2: Material -> BOM Item (component_of)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_Material>",
-  "targetTermId": "<termId_for_BOM_Item>",
-  "relationshipType": "HAS_PART",
-  "description": "component_of"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Material>', '<termId_for_BOM_Item>', 'HAS_PART');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_Material>', '<termId_for_BOM_Item>', 'HAS_PART');
 
 -- Relationship 3: Purchase Order -> Supplier (placed_with)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_Purchase_Order>",
-  "targetTermId": "<termId_for_Supplier>",
-  "relationshipType": "RELATED_TO",
-  "description": "placed_with"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Purchase_Order>', '<termId_for_Supplier>', 'RELATED_TO');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_Purchase_Order>', '<termId_for_Supplier>', 'RELATED_TO');
 
 -- Relationship 4: Carrier -> Shipment (fulfills)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_Carrier>",
-  "targetTermId": "<termId_for_Shipment>",
-  "relationshipType": "RELATED_TO",
-  "description": "fulfills"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Carrier>', '<termId_for_Shipment>', 'RELATED_TO');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_Carrier>', '<termId_for_Shipment>', 'RELATED_TO');
 
 -- Relationship 5: Inspection -> Material (inspects)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_Inspection>",
-  "targetTermId": "<termId_for_Material>",
-  "relationshipType": "RELATED_TO",
-  "description": "inspects"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Inspection>', '<termId_for_Material>', 'RELATED_TO');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_Inspection>', '<termId_for_Material>', 'RELATED_TO');
 
--- Relationship 6: Purchase Order -> AP Line Item (initiates)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_Purchase_Order>",
-  "targetTermId": "<termId_for_AP_Line_Item>",
-  "relationshipType": "RELATED_TO",
-  "description": "initiates"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+-- Relationship 6: Purchase Order -> AP Line Item (initiates) — cross-domain
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Purchase_Order>', '<termId_for_AP_Line_Item>', 'RELATED_TO');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_Purchase_Order>', '<termId_for_AP_Line_Item>', 'RELATED_TO');
 
 -- Relationship 7: AP Line Item -> Cost Posting (contributes_to)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_AP_Line_Item>",
-  "targetTermId": "<termId_for_Cost_Posting>",
-  "relationshipType": "RELATED_TO",
-  "description": "contributes_to"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_AP_Line_Item>', '<termId_for_Cost_Posting>', 'RELATED_TO');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_AP_Line_Item>', '<termId_for_Cost_Posting>', 'RELATED_TO');
 
--- Relationship 8: Sales Order -> Material (sold_as)
-SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
-  "sourceTermId": "<termId_for_Sales_Order>",
-  "targetTermId": "<termId_for_Material>",
-  "relationshipType": "RELATED_TO",
-  "description": "sold_as"
-}');
--- >> Note the returned relationshipId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relationshipId>');
+-- Relationship 8: Sales Order -> Material (sold_as) — cross-domain
+SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Sales_Order>', '<termId_for_Material>', 'RELATED_TO');
+-- >> Then: SELECT SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<termId_for_Sales_Order>', '<termId_for_Material>', 'RELATED_TO');
 
 
 -- =============================================================================
@@ -476,7 +430,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('{
 -- =============================================================================
 -- Summary:
 --   3 domains created:  SAP Purchasing, SAP Finance, SAP Sales
---   29 terms drafted:   11 ENTITY, 10 METRIC, 8 TERM (decoders)
+--   29 terms drafted:   11 ENTITY, 11 METRIC, 7 TERM (decoders)
 --   8 relationships drafted (cross-domain where applicable)
 --
 -- Remember: Each DRAFT call returns an ID. Use that ID in the corresponding
