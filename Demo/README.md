@@ -17,6 +17,24 @@ The 8 questions Baseline fails all require business knowledge that doesn't fit i
 
 ## Setup
 
+### 0. Business Ontology CoCo Skill (required)
+
+Install the `business-ontology` skill in Cortex Code before proceeding — it is required to create and manage BON glossary domains, terms, and relationships:
+
+```bash
+# From the Cortex Code skills catalog:
+# Search for "business-ontology" in the skill marketplace, or install manually:
+cp -r <path-to-skill>/business-ontology ~/.snowflake/cortex/skills/business-ontology
+```
+
+The skill requires the **Business Ontology Private Preview** feature flag to be enabled on your account. Contact your Snowflake account team for enablement.
+
+Once installed, you can use natural language in CoCo:
+- `"create a domain called SAP Finance"`
+- `"add a metric called COGS to SAP Finance"`
+- `"ARR derives from Contracted ARR"`
+- `"import ontology from our semantic views"`
+
 ### 1. Snowflake Objects (run SQL scripts in order)
 
 ```bash
@@ -28,7 +46,7 @@ sql/04_create_bon_context_sp.sql # SP_GET_SAP_BON_CONTEXT stored procedure
 sql/05_create_agents.sql        # SAP_BASELINE_AGENT + SAP_BON_AGENT
 ```
 
-### 2. BON Glossary (optional — for Snowsight visualization)
+### 2. BON Glossary (for Snowsight visualization)
 
 ```bash
 sql/06_create_bon_glossary.sql  # 3 domains, 29 terms, 8 relationships
@@ -56,24 +74,6 @@ npm run dev                      # Starts on http://localhost:3000
 ```
 
 Open http://localhost:3000 in your browser.
-
-### 4. Business Ontology CoCo Skill (optional)
-
-If you want to manage the BON glossary interactively from Cortex Code (create domains, add terms, define relationships), install the `business-ontology` skill:
-
-```bash
-# From the Cortex Code skills catalog:
-# Search for "business-ontology" in the skill marketplace, or install manually:
-cp -r <path-to-skill>/business-ontology ~/.snowflake/cortex/skills/business-ontology
-```
-
-The skill requires the **Business Ontology Private Preview** feature flag to be enabled on your account. Contact your Snowflake account team for enablement.
-
-Once installed, you can use natural language in CoCo:
-- `"create a domain called SAP Finance"`
-- `"add a metric called COGS to SAP Finance"`
-- `"ARR derives from Contracted ARR"`
-- `"import ontology from our semantic views"`
 
 ## Demo Walkthrough
 
