@@ -57,6 +57,24 @@ npm run dev                      # Starts on http://localhost:3000
 
 Open http://localhost:3000 in your browser.
 
+### 4. Business Ontology CoCo Skill (optional)
+
+If you want to manage the BON glossary interactively from Cortex Code (create domains, add terms, define relationships), install the `business-ontology` skill:
+
+```bash
+# From the Cortex Code skills catalog:
+# Search for "business-ontology" in the skill marketplace, or install manually:
+cp -r <path-to-skill>/business-ontology ~/.snowflake/cortex/skills/business-ontology
+```
+
+The skill requires the **Business Ontology Private Preview** feature flag to be enabled on your account. Contact your Snowflake account team for enablement.
+
+Once installed, you can use natural language in CoCo:
+- `"create a domain called SAP Finance"`
+- `"add a metric called COGS to SAP Finance"`
+- `"ARR derives from Contracted ARR"`
+- `"import ontology from our semantic views"`
+
 ## Demo Walkthrough
 
 ### Context Tab
