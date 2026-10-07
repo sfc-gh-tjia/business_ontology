@@ -63,6 +63,7 @@ By the end of this guide you will have:
 | **Metric nodes** | 11 | Formulas with business rules (COGS, OTD, Risk, etc.) |
 | **Decoder terms** | 7 | SAP field code mappings (MATKL, BSCHL, HKONT, etc.) |
 | **Relationships** | 8 | Cross-domain connections (Supplier→Material, PO→AP, etc.) |
+| **Representations** | 29 | Bind terms to physical Snowflake objects (optional for agent, recommended for governance) |
 | **Context SP** | 1 | Delivers ontology to agent at runtime |
 | **Cortex Agent** | 1 | Uses ontology context + Semantic View to answer questions |
 
@@ -337,6 +338,12 @@ Description: SAP sales organizations: 1000=Americas, 2000=EMEA, 3000=APAC
 
 Relationships connect entities across and within domains. Tell the skill the source, target, and relationship type.
 
+> **Relationship type guidance (per skill best practices):**
+> - `RELATED_TO` is the general-purpose type — use when no other type fits precisely
+> - `HAS_PART` — target is a structural component of source (Material has part BOM Item)
+> - `MEASURES` — source is a metric that quantifies target (Inspection measures Material)
+> - Prefer specific types over `RELATED_TO` when the semantics are clear. The skill's quality gate (`R-00`) validates that only supported types are used.
+
 **Within Purchasing:**
 
 ```
@@ -389,7 +396,22 @@ After all terms and relationships are created, verify by querying the glossary:
 $business-ontology Show me all the terms in the SAP Purchasing domain
 ```
 
-Or query a specific metric to see its formula:
+**Validation (recommended per skill best practices):**
+
+Verify the full graph landed correctly — drafted relationships are invisible until approved, so always confirm via the graph:
+
+```sql
+-- Verify the complete ontology graph
+SELECT SYSTEM$GET_GLOSSARY_GRAPH();
+```
+
+Check the counts match expectations (29 terms, 8 relationships). If the relationship count is lower than expected, some may still be in DRAFT state — approve them with:
+
+```sql
+SELECT SYSTEM$APPROVE_ALL_GLOSSARY_RELATIONSHIPS();
+```
+
+Spot-check a specific metric term to verify its formula:
 
 ```sql
 SELECT
