@@ -54,6 +54,14 @@ sql/06_create_bon_glossary.sql  # 3 domains, 29 terms, 8 relationships
 
 This script uses `SYSTEM$DRAFT_GLOSSARY_TERM` and `SYSTEM$APPROVE_GLOSSARY_TERM`. Each DRAFT call returns a `termId` — you must pass it to the corresponding APPROVE call. Run the statements one at a time and note the returned IDs.
 
+**Optional: Bind terms to physical objects (representations).** This links glossary terms to their tables/columns/SV in the Snowflake catalog for lineage and governance. Not required for the agent demo. Use the business-ontology CoCo skill:
+
+```
+$business-ontology In the SAP Purchasing domain, associate the entity Supplier with table DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.LFA1
+```
+
+See `getting-started-business-ontology.md` Phase 7 for all 29 representation prompts.
+
 ### 3. Web App
 
 ```bash
@@ -81,6 +89,7 @@ Open http://localhost:3000 in your browser.
 - **Source Tables**: 15 SAP tables, 266 rows across purchasing, finance, and sales
 - **Semantic View**: SAP_BASELINE_SV connecting 14 tables with 12 FK relationships
 - **Business Ontology**: 29 glossary terms — 11 entity relationships, 7 SAP code decoders, 11 authoritative formulas
+- **Representations**: All 29 terms bound to physical objects (entities→tables, metrics→semantic view, decoders→columns)
 
 ### Comparison Tab
 Select a question from the dropdown, click Ask, and compare both agents side by side. Recommended demo questions:
