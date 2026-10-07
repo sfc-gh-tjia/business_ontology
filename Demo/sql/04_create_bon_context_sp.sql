@@ -1,5 +1,7 @@
 -- =====================================================
 -- Business Ontology Context Stored Procedure
+-- Dynamically retrieves all ontology terms from the
+-- glossary via SYSTEM$GET_GLOSSARY_TERM() at runtime.
 -- =====================================================
 USE DATABASE DB_ONTOLOGY_CONTROL_PLANE;
 USE SCHEMA SAP_PRODUCTION;
@@ -12,119 +14,98 @@ RUNTIME_VERSION = '3.11'
 PACKAGES = ('snowflake-snowpark-python')
 HANDLER = 'run'
 EXECUTE AS CALLER
-AS '
+AS $$
 def run(session):
-    context = """
-=== BUSINESS ONTOLOGY CONTEXT (Enterprise Supply Chain) ===
-=== Three domains: PURCHASING, FINANCE, SALES ===
+    import json
 
---- SAP TABLE DECODER ---
-PURCHASING DOMAIN:
-  LFA1 = Vendor Master | MARA = Material Master | EKPO = PO Items
-  LIKP = Shipments | T001W = Plants | T320 = Warehouses
-  STPO = Bill of Materials (recursive) | LFB1 = Contracts
-  QALS = Inspections | LFA2 = Carriers
-FINANCE DOMAIN:
-  BSEG = Accounting Document Line Items (AP postings, COGS postings, credit memos)
-  COEP = Cost Center Line Items (cost allocations by cost object)
-SALES DOMAIN:
-  VBAP = Sales Order Items (finished goods sold to customers)
-  KONV = Pricing Conditions (base prices, discounts, surcharges)
+    # ---------------------------------------------------------------
+    # Known term IDs (discovered from glossary)
+    # The SP retrieves each term LIVE from the glossary at runtime.
+    # To add new terms: create them via the business-ontology skill,
+    # then add their IDs to this list.
+    # ---------------------------------------------------------------
+    TERM_IDS = [
+        '32015320777', '32015320837', '32015320841', '32015320845',
+        '32015320901', '32015320965', '32015320969', '32015321029',
+        '32015321093', '32015321097', '32015321101', '32015321157',
+        '32015321161', '32015321165', '32015321221', '32015321285',
+        '32015321289', '32015321349', '32015321353', '32015321413',
+        '32015321417', '32015321477', '32015321481', '32015321541',
+        '32015321545', '32015321549', '32015321553', '32015321605',
+        '32015321669'
+    ]
 
---- SAP FIELD DECODER ---
-PURCHASING:
-  LIFNR=Vendor Number | KTOKK=Account Group (ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary)
-  MATKL=Material Group (043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials, 048=Assembly)
-  STPRS=Standard Price USD | NETWR=Net Value USD | STATU=Status (EKPO: O/C/R, LIKP: D/T/X)
-  LFDAT=Expected Delivery | WADAT=Actual Delivery | OTRAT=Carrier Self-Reported OTD (UNRELIABLE)
-  STLNR=BOM Parent | IDNRK=BOM Child | VTART=Contract Type (M/F/S) | JWERT=Contract Annual Value
-FINANCE:
-  BELNR=Document Number | HKONT=GL Account | DMBTR=Amount
-  BSCHL=Posting Key: 31=Invoice (POSITIVE), 34=Credit Memo (NEGATIVE - must be subtracted)
-  HKONT codes: 0040100000=COGS Raw Materials, 0040200000=COGS Freight, 0021100000=Accounts Payable
-  OBJNR=Cost Object: KS-MFG-US=US Manufacturing, KS-MFG-EU=EU Manufacturing, KS-MFG-AP=APAC Manufacturing, KS-LOG=Logistics, KS-QA=Quality
-  KSTAR=Cost Element: 0040100000=Material Cost, 0047000000=Freight, 0048000000=Quality Cost
-SALES:
-  VBELN=Sales Document | KWMENG=Order Quantity | KUNNR=Customer Number
-  VKORG=Sales Org (1000=Americas, 2000=EMEA, 3000=APAC)
-  KSCHL=Condition Type: PR00=Base Price, K007=Customer Discount (REDUCES revenue), KF00=Freight Surcharge (ADDS to revenue)
-  KWERT=Condition Value (NEGATIVE for discounts, POSITIVE for surcharges and base prices)
+    # Step 1: Retrieve each term from the glossary via SYSTEM$ API
+    all_terms = []
+    term_by_id = {}
+    for tid in TERM_IDS:
+        try:
+            row = session.sql(f"SELECT SYSTEM$GET_GLOSSARY_TERM('{tid}')").collect()
+            term = json.loads(row[0][0])
+            if not term.get('error', True):
+                all_terms.append(term)
+                term_by_id[term['termId']] = term
+        except:
+            pass
 
---- AUTHORITATIVE BUSINESS METRIC FORMULAS ---
+    # Step 2: Organize by kind
+    entities = [t for t in all_terms if t['itemKind'] == 'ENTITY']
+    metrics  = [t for t in all_terms if t['itemKind'] == 'METRIC']
+    decoders = [t for t in all_terms if t['itemKind'] == 'TERM']
 
-FORMULA 1 - Canonical Supplier Count:
-  SQL: SELECT COUNT(DISTINCT LIFNR) FROM LFA1 WHERE KTOKK IN (''ZSTR'',''ZSTD'')
-  Excludes probationary (ZPRB). Answer: 14.
+    # Collect relationships (deduplicated)
+    seen_edges = set()
+    relationships = []
+    for t in all_terms:
+        for edge in t.get('relationships', {}).get('edges', []):
+            edge_key = (edge['sourceTermId'], edge['targetTermId'], edge['relationshipType'])
+            if edge_key not in seen_edges:
+                seen_edges.add(edge_key)
+                src = term_by_id.get(edge['sourceTermId'], {}).get('name', '?')
+                tgt = term_by_id.get(edge['targetTermId'], {}).get('name', '?')
+                relationships.append({'source': src, 'target': tgt, 'type': edge['relationshipType']})
 
-FORMULA 2 - Operational On-Time Delivery Rate:
-  SQL: SELECT COUNT(CASE WHEN WADAT <= LFDAT THEN 1 END)*100.0/COUNT(*) FROM LIKP WHERE STATU=''D''
-  WARNING: Do NOT use LFA2.OTRAT (carrier self-reported, unreliable, ~90%). Real OTD is ~66.7%.
+    # Step 3: Build context in 3 categories for agent inference
+    lines = []
+    lines.append("=== BUSINESS ONTOLOGY CONTEXT ===")
+    lines.append(f"Retrieved from glossary: {len(all_terms)} terms across 3 domains")
+    lines.append(f"{len(entities)} entities | {len(metrics)} formulas | {len(decoders)} decoders | {len(relationships)} relationships")
 
-FORMULA 3 - Total Procurement Spend:
-  SQL: SELECT SUM(NETWR) FROM EKPO
-  Use EKPO.NETWR only. NOT LFB1.JWERT (contract values are much larger).
+    # CATEGORY 1: CODE DECODERS
+    lines.append("")
+    lines.append("=" * 50)
+    lines.append(f"CATEGORY 1: SAP CODE DECODERS ({len(decoders)})")
+    lines.append("=" * 50)
+    lines.append("Use these to interpret coded field values in SAP tables.")
+    for d in sorted(decoders, key=lambda x: x['name']):
+        field = d['name'].split()[0]
+        lines.append(f"\n{field}: {d['description']}")
 
-FORMULA 4 - Weighted Supply Risk Score:
-  Weights: 0.4*single_source + 0.3*defect_rate + 0.3*delivery_risk
-  These are FIXED business policy weights.
+    # CATEGORY 2: AUTHORITATIVE FORMULAS
+    lines.append("")
+    lines.append("=" * 50)
+    lines.append(f"CATEGORY 2: AUTHORITATIVE BUSINESS FORMULAS ({len(metrics)})")
+    lines.append("=" * 50)
+    lines.append("If a formula exists for the question, USE IT EXACTLY. Do NOT invent your own SQL.")
+    for i, m in enumerate(sorted(metrics, key=lambda x: x['name']), 1):
+        lines.append(f"\nFORMULA {i} - {m['name']}:")
+        if m.get('formula'):
+            lines.append(f"  SQL/LOGIC: {m['formula']}")
+        lines.append(f"  RULE: {m['description']}")
 
-FORMULA 5 - Supplier Disruption Cascade:
-  Chain: Supplier -> EKPO(materials) -> STPO(recursive BOM upward) -> all affected assemblies
-  Use recursive CTE on STPO traversing upward from affected materials.
+    # CATEGORY 3: ENTITY RELATIONSHIPS
+    lines.append("")
+    lines.append("=" * 50)
+    lines.append(f"CATEGORY 3: ENTITY RELATIONSHIPS ({len(relationships)})")
+    lines.append("=" * 50)
+    lines.append("Cross-domain connections. Use to trace multi-hop chains.")
+    lines.append("\nENTITIES:")
+    for e in sorted(entities, key=lambda x: x['domain']['name'] + x['name']):
+        lines.append(f"  [{e['domain']['name']}] {e['name']}: {e['description']}")
+    lines.append("\nRELATIONSHIP MAP:")
+    for r in relationships:
+        lines.append(f"  {r['source']} --[{r['type']}]--> {r['target']}")
 
-FORMULA 6 - Total Raw Material Cost Rollup:
-  Recursive BOM explosion downward with quantity multiplication, JOIN MARA.STPRS for leaf costs.
-
-FORMULA 7 - Cost of Goods Sold (COGS) for Raw Materials:
-  SQL: SELECT SUM(CASE WHEN BSCHL=''31'' THEN DMBTR ELSE -DMBTR END) FROM BSEG WHERE HKONT=''0040100000''
-  CRITICAL: BSCHL=''31'' (invoice) is POSITIVE. BSCHL=''34'' (credit memo) must be SUBTRACTED.
-  Credit memos represent quality returns/adjustments. Ignoring them overstates COGS.
-  Correct answer: $1,290,020. Wrong answer (no sign logic): $1,353,690 or $1,417,360.
-
-FORMULA 8 - Product Gross Margin:
-  CROSS-DOMAIN FORMULA spanning Sales -> Purchasing -> Finance:
-  Gross Margin = Sales Revenue (VBAP.NETWR) - Material COGS (BOM cost rollup * units sold)
-  For ASSY-004: Revenue = SUM(VBAP.NETWR WHERE MATNR=''ASSY-004'')
-  Material COGS = (Formula 6 cost per unit) * SUM(VBAP.KWMENG WHERE MATNR=''ASSY-004'')
-  NOTE: No FK connects VBAP directly to BSEG. The chain is:
-  Sales Order (VBAP) -> Material (MARA) -> BOM (STPO recursive) -> Standard Prices (MARA.STPRS)
-
-FORMULA 9 - Customer Discount Revenue Leakage:
-  SQL: SELECT SUM(ABS(KWERT)) FROM KONV WHERE KSCHL=''K007''
-  CRITICAL: KSCHL=''K007'' = Customer Discount (reduces revenue). KWERT values are NEGATIVE.
-  KSCHL=''KF00'' = Freight Surcharge (adds to revenue). Do NOT include surcharges in discount calc.
-  KSCHL=''PR00'' = Base Price. Do NOT confuse with discounts.
-
-FORMULA 10 - Supplier Disruption Revenue Impact:
-  CROSS-DOMAIN FORMULA spanning Purchasing -> BOM -> Sales:
-  Step 1: Find materials supplied by the vendor (from EKPO)
-  Step 2: Find ALL assemblies containing those materials (Formula 5 - recursive BOM upward)
-  Step 3: Find sales revenue for those assemblies (from VBAP)
-  Total revenue at risk = SUM(VBAP.NETWR) for all affected assemblies.
-  This is a 5-hop cross-domain traversal: Supplier -> Materials -> BOM -> Assemblies -> Sales Orders
-
-FORMULA 11 - Cost Center Total Cost:
-  SQL: SELECT SUM(WRTBTR) FROM COEP WHERE OBJNR = :cost_object_code
-  OBJNR decoder: KS-MFG-US=US Manufacturing, KS-MFG-EU=EU Manufacturing, KS-MFG-AP=APAC Manufacturing
-  KS-LOG=Logistics Operations, KS-QA=Quality Assurance
-
---- CROSS-DOMAIN RELATIONSHIP MAP ---
-PURCHASING -> FINANCE:
-  Purchase Order (EKPO) --initiates--> AP Posting (BSEG) via EBELN
-  AP Invoice (BSEG BSCHL=31) --contributes_to--> COGS (HKONT=0040100000)
-  AP Credit Memo (BSEG BSCHL=34) --reduces--> COGS (must be subtracted)
-  PO Spend --allocated_to--> Cost Centers (COEP) via material/plant mapping
-PURCHASING -> SALES (via BOM):
-  Raw Material (MARA) --component_of--> Assembly (STPO recursive) --sold_as--> Sales Order (VBAP)
-  No direct FK exists between EKPO and VBAP. Connection goes through BOM.
-SALES -> FINANCE:
-  Sales Revenue (VBAP.NETWR) minus Material COGS = Gross Margin
-  Discount conditions (KONV K007) --reduces--> effective revenue
-FINANCE internal:
-  BSEG postings --allocated_to--> Cost Centers (COEP)
-  Operating Income = Revenue - COGS - Operating Expenses
-
-=== END BUSINESS ONTOLOGY CONTEXT ===
-"""
-    return context
-';
+    lines.append("\n=== END BUSINESS ONTOLOGY CONTEXT ===")
+    return "\n".join(lines)
+$$;
