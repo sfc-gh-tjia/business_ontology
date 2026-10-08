@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="snowflake-source" content="cortex-agent-authored" />
+  <title>Getting Started with Business Ontology</title>
+  <script type="application/json" id="snowflake-report-metadata">
+  { "generated": "2026-10-07", "intent": "Getting started guide for Business Ontology with visual diagrams" }
+  </script>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+      max-width: 900px; width: 100%; box-sizing: border-box;
+      margin: 0 auto; padding: clamp(16px, 4vw, 32px);
+      color: #1f2937;
+      background: #ffffff;
+      line-height: 1.7;
+    }
+    h1 { font-size: 2rem; color: #0f172a; border-bottom: 3px solid #2563eb; padding-bottom: 0.3em; }
+    h2 { font-size: 1.5rem; margin-top: 2.5em; color: #0f172a; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.2em; }
+    h3 { font-size: 1.15rem; color: #374151; margin-top: 1.8em; }
+    h4 { font-size: 1rem; color: #4b5563; }
+    a { color: #2563eb; }
+    code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.88em; background: #f3f4f6; padding: 2px 5px; border-radius: 4px; }
+    pre { background: #1e293b; color: #e2e8f0; padding: 1em; border-radius: 8px; overflow-x: auto; font-size: 0.85em; line-height: 1.5; }
+    pre code { background: none; padding: 0; color: inherit; }
+    blockquote { margin: 1em 0; padding: 0.8em 1em; border-left: 4px solid #2563eb; background: #eff6ff; border-radius: 0 8px 8px 0; }
+    blockquote p { margin: 0.3em 0; }
+    img, svg { max-width: 100%; height: auto; }
+    .table-wrap { overflow-x: auto; margin: 1em 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.9em; }
+    th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+    th { background: #f3f4f6; font-weight: 600; }
+    hr { border: none; border-top: 1px solid #e5e7eb; margin: 2em 0; }
+
+    .banner { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 0.8em 1em; margin: 1em 0; font-size: 0.9em; }
+    .diagram-box { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.5em; margin: 1.5em 0; overflow-x: auto; }
+    .diagram-box .mermaid, .diagram-box .mermaid svg { background: #ffffff !important; }
+    .diagram-box .caption { font-size: 0.82em; color: #6b7280; margin-top: 0.8em; font-style: italic; }
+
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5em; margin: 1.5em 0; }
+    @media (max-width: 600px) { .compare-grid { grid-template-columns: 1fr; } }
+    .compare-card { padding: 1.2em; border-radius: 10px; border: 2px solid; background: #ffffff; }
+    .compare-card.bad { border-color: #fca5a5; background: #fef2f2; }
+    .compare-card.good { border-color: #86efac; background: #f0fdf4; }
+    .compare-card h4 { margin: 0 0 0.3em; }
+    .compare-card .q { font-size: 0.85em; color: #6b7280; margin-bottom: 0.5em; }
+    .compare-card pre { font-size: 0.82em; margin: 0.5em 0; }
+    .compare-card .result { font-size: 1.8em; font-weight: 700; }
+    .compare-card.bad .result { color: #dc2626; }
+    .compare-card.good .result { color: #16a34a; }
+    .compare-card .note { font-size: 0.82em; color: #6b7280; }
+
+    .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.8em; margin: 1.5em 0; }
+    .stat { text-align: center; padding: 0.8em 0.5em; border-radius: 8px; background: #f1f5f9; border: 1px solid #e2e8f0; }
+    .stat .n { font-size: 1.8em; font-weight: 700; color: #2563eb; }
+    .stat .l { font-size: 0.78em; color: #6b7280; }
+
+    .three-cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1em; margin: 1.5em 0; }
+    @media (max-width: 700px) { .three-cats { grid-template-columns: 1fr; } }
+    .cat-card { padding: 1em; border-radius: 10px; border: 2px solid; text-align: center; }
+    .cat-card .cn { font-size: 2em; font-weight: 700; }
+    .cat-card .ct { font-weight: 600; margin: 0.2em 0 0.5em; }
+    .cat-card .cd { font-size: 0.82em; color: #6b7280; }
+    .cat-card .ce { font-size: 0.82em; margin-top: 0.6em; padding: 0.5em; border-radius: 6px; }
+    .cat1 { border-color: #93c5fd; background: #eff6ff; }
+    .cat1 .cn { color: #2563eb; }
+    .cat1 .ce { background: #dbeafe; }
+    .cat2 { border-color: #fbbf24; background: #fffbeb; }
+    .cat2 .cn { color: #d97706; }
+    .cat2 .ce { background: #fef3c7; }
+    .cat3 { border-color: #4ade80; background: #f0fdf4; }
+    .cat3 .cn { color: #16a34a; }
+    .cat3 .ce { background: #d1fae5; }
+
+    .prompt-block { background: #1e293b; color: #93c5fd; padding: 0.8em 1em; border-radius: 8px; margin: 0.5em 0; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; border-left: 3px solid #3b82f6; }
+  </style>
+</head>
+<body>
+
+<h1>Getting Started with Business Ontology</h1>
+
+<div class="banner">Private Preview — Business Ontology must be enabled on your Snowflake account before use. Contact your Snowflake account team or SE.</div>
+
+<h2>What is Business Ontology?</h2>
+<p>Business Ontology is Snowflake's governed vocabulary layer. It lets you define what business concepts mean — metrics, entities, decoder tables, formulas — and how they relate to each other. Once defined, Cortex Agents use this knowledge to answer questions that require understanding beyond raw table schemas.</p>
+<p><strong>The core problem it solves:</strong> A Semantic View teaches an agent <em>how to query</em> (tables, columns, joins). Business Ontology teaches it <em>what the answer means</em> (which vendors count as "canonical", how to handle credit memos, what formula to use for COGS).</p>
+
+<!-- DIAGRAM 1: SV vs BON -->
+<div class="compare-grid">
+  <div class="compare-card bad">
+    <h4>Semantic View Alone</h4>
+    <div class="q">"How many suppliers do we have?"</div>
+    <pre><code>COUNT(*) FROM LFA1</code></pre>
+    <div class="result">15</div>
+    <div class="note">Wrong — includes probationary (ZPRB) vendor</div>
+  </div>
+  <div class="compare-card good">
+    <h4>Semantic View + Business Ontology</h4>
+    <div class="q">"How many suppliers do we have?"</div>
+    <pre><code>COUNT(DISTINCT LIFNR) FROM LFA1
+WHERE KTOKK IN ('ZSTR','ZSTD')</code></pre>
+    <div class="result">14</div>
+    <div class="note">Correct — excludes probationary per business policy</div>
+  </div>
+</div>
+
+<hr>
+<h2>What You'll Build</h2>
+
+<div class="stat-row">
+  <div class="stat"><div class="n">3</div><div class="l">Domains</div></div>
+  <div class="stat"><div class="n">11</div><div class="l">Entities</div></div>
+  <div class="stat"><div class="n">11</div><div class="l">Formulas</div></div>
+  <div class="stat"><div class="n">7</div><div class="l">Decoders</div></div>
+  <div class="stat"><div class="n">8</div><div class="l">Relationships</div></div>
+  <div class="stat"><div class="n">29</div><div class="l">Representations</div></div>
+</div>
+
+<hr>
+<h2>End-to-End Process</h2>
+
+<!-- DIAGRAM 2: Phases -->
+<div class="diagram-box">
+  <pre class="mermaid">
+flowchart LR
+  P1["Phase 1\nCreate Domains"]
+  P2["Phase 2\nAdd Entities"]
+  P3["Phase 3\nAdd Metrics\n+ Formulas"]
+  P4["Phase 4\nAdd Decoders"]
+  P5["Phase 5\nDefine\nRelationships"]
+  P6["Phase 6\nVerify"]
+  P7["Phase 7\nBind\nRepresentations"]
+  P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+  style P1 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style P2 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style P3 fill:#fef3c7,stroke:#d97706,color:#78350f
+  style P4 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style P5 fill:#e0e7ff,stroke:#4f46e5,color:#312e81
+  style P6 fill:#d1fae5,stroke:#059669,color:#064e3b
+  style P7 fill:#fce7f3,stroke:#db2777,color:#831843
+  </pre>
+  <div class="caption">Phase 3 (Formulas) is the key differentiator. Phase 7 (Representations) is optional for agent behavior, recommended for governance.</div>
+</div>
+
+<p>Each phase below includes the exact CoCo prompts. The <code>$business-ontology</code> prefix ensures the skill is invoked.</p>
+
+<h3>Phase 1: Create Domains</h3>
+<div class="prompt-block">$business-ontology Create a domain called SAP Purchasing</div>
+<div class="prompt-block">$business-ontology Create a domain called SAP Finance</div>
+<div class="prompt-block">$business-ontology Create a domain called SAP Sales</div>
+<blockquote><p><strong>Behind the scenes:</strong> The skill calls <code>SYSTEM$CREATE_GLOSSARY_DOMAIN()</code>. No draft/approve needed — domains are created immediately.</p></blockquote>
+
+<h3>Phase 2: Add Entities (11 total)</h3>
+<p>Entities are business objects. They have descriptions but no formulas.</p>
+<h4>SAP Purchasing — 7 entities</h4>
+<div class="prompt-block">$business-ontology Add an entity called Supplier to SAP Purchasing.
+Description: Vendor master (LFA1). KTOKK: ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary. Exclude ZPRB from canonical counts.</div>
+<div class="prompt-block">$business-ontology Add an entity called Material to SAP Purchasing.
+Description: Material master (MARA). MATKL: 043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials. STPRS=standard price USD.</div>
+<div class="prompt-block">$business-ontology Add an entity called Purchase Order to SAP Purchasing.
+Description: PO items (EKPO). STATU: O=Open, C=Closed, R=Received. NETWR=net value, MENGE=quantity.</div>
+<div class="prompt-block">$business-ontology Add an entity called Shipment to SAP Purchasing.
+Description: Deliveries (LIKP). Compare WADAT vs LFDAT for OTD. Do NOT use LFA2.OTRAT (unreliable).</div>
+<div class="prompt-block">$business-ontology Add an entity called Carrier to SAP Purchasing.
+Description: Forwarding agents (LFA2). VSART: 01=Ocean, 02=FTL, 03=Air, 04=Intermodal, 05=LTL. OTRAT is self-reported — unreliable.</div>
+<div class="prompt-block">$business-ontology Add an entity called Inspection to SAP Purchasing.
+Description: Quality inspection lots (QALS). VCODE: A=Accepted, R=Rejected, C=Conditional. QAESSION=defect rate.</div>
+<div class="prompt-block">$business-ontology Add an entity called BOM Item to SAP Purchasing.
+Description: Bill of Materials (STPO). STLNR=parent, IDNRK=child, MENGE=qty. 4-level recursive hierarchy.</div>
+
+<h4>SAP Finance — 2 entities</h4>
+<div class="prompt-block">$business-ontology Add an entity called AP Line Item to SAP Finance.
+Description: Accounting lines (BSEG). BSCHL: 31=Invoice (POSITIVE), 34=Credit memo (SUBTRACT). HKONT=GL account.</div>
+<div class="prompt-block">$business-ontology Add an entity called Cost Posting to SAP Finance.
+Description: Cost postings (COEP). OBJNR: KS-MFG-US/EU/AP=Manufacturing, KS-LOG=Logistics, KS-QA=Quality.</div>
+
+<h4>SAP Sales — 2 entities</h4>
+<div class="prompt-block">$business-ontology Add an entity called Sales Order to SAP Sales.
+Description: Sales items (VBAP). VKORG: 1000=Americas, 2000=EMEA, 3000=APAC. NETWR=net value.</div>
+<div class="prompt-block">$business-ontology Add an entity called Pricing Condition to SAP Sales.
+Description: Pricing conditions (KONV). KSCHL: PR00=Base, K007=Discount (REDUCES revenue), KF00=Surcharge (ADDS).</div>
+
+<h3>Phase 3: Add Metrics with Formulas (11 total)</h3>
+<p>Metrics include a <code>formula</code> field — the key differentiator from Semantic View metrics.</p>
+<h4>SAP Purchasing — 6 metrics</h4>
+<div class="prompt-block">$business-ontology Add a metric called Canonical Supplier Count to SAP Purchasing.
+Formula: COUNT(DISTINCT LIFNR) FROM LFA1 WHERE KTOKK IN ('ZSTR','ZSTD')
+Description: Excludes ZPRB probationary. Answer is 14, not 15.</div>
+<div class="prompt-block">$business-ontology Add a metric called Operational OTD Rate to SAP Purchasing.
+Formula: COUNT(CASE WHEN WADAT &lt;= LFDAT THEN 1 END) / COUNT(*) FROM LIKP WHERE STATU='D'
+Description: Real OTD ~66.7%. WARNING: Do NOT use LFA2.OTRAT (~90%, unreliable).</div>
+<div class="prompt-block">$business-ontology Add a metric called Total Procurement Spend to SAP Purchasing.
+Formula: SUM(NETWR) FROM EKPO
+Description: Use EKPO.NETWR only. NOT LFB1.JWERT (contract values, much larger).</div>
+<div class="prompt-block">$business-ontology Add a metric called Weighted Supply Risk Score to SAP Purchasing.
+Formula: 0.4 * single_source_flag + 0.3 * defect_rate + 0.3 * delivery_failure_rate
+Description: Fixed policy weights. Top: MAT-006 at 0.70.</div>
+<div class="prompt-block">$business-ontology Add a metric called Supplier Disruption Cascade to SAP Purchasing.
+Formula: Recursive: Supplier -> EKPO(materials) -> STPO(recursive BOM upward) -> affected assemblies
+Description: 5-hop cross-domain traversal from supplier to revenue impact.</div>
+<div class="prompt-block">$business-ontology Add a metric called BOM Cost Rollup to SAP Purchasing.
+Formula: Recursive CTE on STPO downward, multiply MENGE, JOIN MARA.STPRS for leaf costs
+Description: For ASSY-004: $286.60/unit. Do NOT use assembly STPRS ($520).</div>
+
+<h4>SAP Finance — 3 metrics</h4>
+<div class="prompt-block">$business-ontology Add a metric called COGS Raw Materials to SAP Finance.
+Formula: SUM(CASE WHEN BSCHL='31' THEN DMBTR WHEN BSCHL='34' THEN -DMBTR END) FROM BSEG WHERE HKONT='0040100000'
+Description: CRITICAL: Credit memos (34) SUBTRACT. Correct: $1,290,020. Wrong: $1,353,690.</div>
+<div class="prompt-block">$business-ontology Add a metric called Product Gross Margin to SAP Finance.
+Formula: VBAP.NETWR - (BOM_Cost_Rollup * VBAP.KWMENG)
+Description: Cross-domain: Sales revenue minus BOM cost. No direct FK — chain goes through BOM.</div>
+<div class="prompt-block">$business-ontology Add a metric called Cost Center Total to SAP Finance.
+Formula: SUM(WRTBTR) FROM COEP WHERE OBJNR = cost_object_code
+Description: KS-MFG-US=US Manufacturing ($419,750), KS-LOG=Logistics, KS-QA=Quality.</div>
+
+<h4>SAP Sales — 2 metrics</h4>
+<div class="prompt-block">$business-ontology Add a metric called Discount Leakage to SAP Sales.
+Formula: SUM(ABS(KWERT)) FROM KONV WHERE KSCHL='K007'
+Description: K007=discount only. EXCLUDE KF00 (surcharges) and PR00 (base prices).</div>
+<div class="prompt-block">$business-ontology Add a metric called Disruption Revenue Impact to SAP Sales.
+Formula: SUM(VBAP.NETWR) for assemblies from Supplier Disruption Cascade
+Description: Revenue at risk. 5-hop: Supplier -> Materials -> BOM -> Assemblies -> Sales.</div>
+
+<h3>Phase 4: Add Decoders (7 total)</h3>
+<p>Decoders map SAP field codes to business meanings. <code>itemKind: "TERM"</code>, no formula.</p>
+<div class="prompt-block">$business-ontology Add a term called KTOKK Account Group Decoder to SAP Purchasing.
+Description: ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary (exclude from counts)</div>
+<div class="prompt-block">$business-ontology Add a term called MATKL Material Group Decoder to SAP Purchasing.
+Description: 043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials</div>
+<div class="prompt-block">$business-ontology Add a term called BSCHL Posting Key Decoder to SAP Finance.
+Description: 31=Invoice (positive), 34=Credit memo (SUBTRACT from totals)</div>
+<div class="prompt-block">$business-ontology Add a term called HKONT GL Account Decoder to SAP Finance.
+Description: 0040100000=COGS Raw Materials, 0040200000=COGS Freight</div>
+<div class="prompt-block">$business-ontology Add a term called OBJNR Cost Object Decoder to SAP Finance.
+Description: KS-MFG-US/EU/AP=Manufacturing, KS-LOG=Logistics, KS-QA=Quality</div>
+<div class="prompt-block">$business-ontology Add a term called KSCHL Condition Type Decoder to SAP Sales.
+Description: PR00=Base Price, K007=Discount (include), KF00=Surcharge (EXCLUDE from discounts)</div>
+<div class="prompt-block">$business-ontology Add a term called VKORG Sales Org Decoder to SAP Sales.
+Description: 1000=Americas, 2000=EMEA, 3000=APAC</div>
+
+<h3>Phase 5: Define Relationships (8 total)</h3>
+
+<!-- DIAGRAM 3: Entity Relationship Graph -->
+<div class="diagram-box">
+  <pre class="mermaid">
+graph LR
+  subgraph PURCH["SAP Purchasing"]
+    SUP["Supplier\n(LFA1)"]
+    MAT["Material\n(MARA)"]
+    PO["Purchase Order\n(EKPO)"]
+    SHIP["Shipment\n(LIKP)"]
+    CARR["Carrier\n(LFA2)"]
+    INSP["Inspection\n(QALS)"]
+    BOM["BOM Item\n(STPO)"]
+  end
+  subgraph FIN["SAP Finance"]
+    AP["AP Line Item\n(BSEG)"]
+    COST["Cost Posting\n(COEP)"]
+  end
+  subgraph SALES["SAP Sales"]
+    SO["Sales Order\n(VBAP)"]
+    PRICE["Pricing Cond.\n(KONV)"]
+  end
+  SUP -->|RELATED_TO| MAT
+  MAT -->|HAS_PART| BOM
+  PO -->|RELATED_TO| SUP
+  CARR -->|RELATED_TO| SHIP
+  INSP -->|RELATED_TO| MAT
+  PO -->|RELATED_TO| AP
+  AP -->|RELATED_TO| COST
+  SO -->|RELATED_TO| MAT
+  style SUP fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style MAT fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style PO fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style SHIP fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style CARR fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style INSP fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style BOM fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style AP fill:#fef3c7,stroke:#d97706,color:#78350f
+  style COST fill:#fef3c7,stroke:#d97706,color:#78350f
+  style SO fill:#d1fae5,stroke:#059669,color:#064e3b
+  style PRICE fill:#d1fae5,stroke:#059669,color:#064e3b
+  </pre>
+  <div class="caption">Blue = Purchasing, Yellow = Finance, Green = Sales. Cross-domain: PO→AP, AP→Cost, Sales Order→Material.</div>
+</div>
+
+<div class="prompt-block">$business-ontology Define a relationship: Supplier is related to Material</div>
+<div class="prompt-block">$business-ontology Define a relationship: Material has part BOM Item</div>
+<div class="prompt-block">$business-ontology Define a relationship: Purchase Order is related to Supplier</div>
+<div class="prompt-block">$business-ontology Define a relationship: Carrier is related to Shipment</div>
+<div class="prompt-block">$business-ontology Define a relationship: Inspection is related to Material</div>
+<div class="prompt-block">$business-ontology Define a relationship: Purchase Order is related to AP Line Item</div>
+<div class="prompt-block">$business-ontology Define a relationship: AP Line Item is related to Cost Posting</div>
+<div class="prompt-block">$business-ontology Define a relationship: Sales Order is related to Material</div>
+
+<h3>Phase 6: Verify</h3>
+<div class="prompt-block">$business-ontology Show me all the terms in the SAP Purchasing domain</div>
+<pre><code>-- Verify the complete graph
+SELECT SYSTEM$GET_GLOSSARY_GRAPH();</code></pre>
+
+<h3>Phase 7: Bind Representations (29 total, optional)</h3>
+<p>Links glossary terms to physical Snowflake objects. Optional for agent behavior, required for governance.</p>
+
+<!-- DIAGRAM 4: Representations -->
+<div class="diagram-box">
+  <pre class="mermaid">
+flowchart TD
+  subgraph G["Glossary Terms"]
+    E["11 Entities"]
+    M["11 Metrics"]
+    D["7 Decoders"]
+  end
+  subgraph P["Physical Objects"]
+    T["11 Tables\nLFA1, MARA, EKPO..."]
+    SV["SAP_BASELINE_SV\nSemantic View"]
+    C["7 Columns\nKTOKK, BSCHL, HKONT..."]
+  end
+  E -->|"TABLE"| T
+  M -->|"SEMANTIC_VIEW"| SV
+  D -->|"COLUMN"| C
+  style E fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style M fill:#fef3c7,stroke:#d97706,color:#78350f
+  style D fill:#f3e8ff,stroke:#9333ea,color:#581c87
+  style T fill:#f1f5f9,stroke:#64748b,color:#334155
+  style SV fill:#f1f5f9,stroke:#64748b,color:#334155
+  style C fill:#f1f5f9,stroke:#64748b,color:#334155
+  </pre>
+</div>
+
+<p>Example prompts (run all 29 — see full list in the markdown doc):</p>
+<div class="prompt-block">$business-ontology In the SAP Purchasing domain, associate the entity Supplier with table DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.LFA1</div>
+<div class="prompt-block">$business-ontology In the SAP Finance domain, associate the metric COGS Raw Materials with semantic view DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BASELINE_SV</div>
+<div class="prompt-block">$business-ontology In the SAP Finance domain, associate the term BSCHL Posting Key Decoder with column BSCHL in table DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.BSEG</div>
+
+<hr>
+<h2>Surfacing Ontology Through a Cortex Agent</h2>
+<p>The glossary is the single source of truth. The SP reads from it dynamically — no hardcoded business logic.</p>
+
+<!-- DIAGRAM 5: Agent Inference Flow -->
+<div class="diagram-box">
+  <pre class="mermaid">
+flowchart TD
+  Q["User Question"]
+  A["Cortex Agent"]
+  T1["Tool 1: business_ontology\n(snowscope_search — ALWAYS first)"]
+  IDX["Native search index finds\nrelevant definitions, formulas,\ndecoders, relationships"]
+  T2["Tool 2: query_data\n(text-to-SQL)"]
+  SV["Semantic View\n(14 tables, 12 joins)"]
+  ANS["Correct Answer"]
+  Q --> A --> T1 --> IDX --> A
+  A --> T2 --> SV --> ANS
+  style Q fill:#f0fdf4,stroke:#16a34a,color:#064e3b
+  style A fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style T1 fill:#fef3c7,stroke:#d97706,color:#78350f
+  style IDX fill:#fce7f3,stroke:#db2777,color:#831843
+  style T2 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style SV fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style ANS fill:#d1fae5,stroke:#059669,color:#064e3b
+  </pre>
+  <div class="caption">Update a glossary term via the skill → the agent finds the new definition on the next question. No custom SP needed.</div>
+</div>
+
+<h3>Three Categories at Inference Time</h3>
+<div class="three-cats">
+  <div class="cat-card cat1">
+    <div class="cn">7</div>
+    <div class="ct">Code Decoders</div>
+    <div class="cd">KTOKK, MATKL, BSCHL, HKONT, KSCHL, OBJNR, VKORG</div>
+    <div class="ce">Agent knows: ZPRB = Probationary (exclude from counts)</div>
+  </div>
+  <div class="cat-card cat2">
+    <div class="cn">11</div>
+    <div class="ct">Formulas</div>
+    <div class="cd">SQL/logic with business rules, warnings, correct answers</div>
+    <div class="ce">Agent uses: BSCHL=34 must SUBTRACT (credit memo sign logic)</div>
+  </div>
+  <div class="cat-card cat3">
+    <div class="cn">8</div>
+    <div class="ct">Relationships</div>
+    <div class="cd">Cross-domain entity connections for multi-hop reasoning</div>
+    <div class="ce">Agent traces: Supplier → BOM → Sales (5-hop cascade)</div>
+  </div>
+</div>
+
+<!-- DIAGRAM 6: Formula Flow -->
+<h3>How Formulas Flow</h3>
+<div class="diagram-box">
+  <pre class="mermaid">
+flowchart LR
+  subgraph GL["Glossary\n(Single Source of Truth)"]
+    G1["METRIC: Canonical Supplier Count\nformula: COUNT(DISTINCT LIFNR)\nFROM LFA1 WHERE KTOKK IN\n('ZSTR','ZSTD')"]
+  end
+  subgraph IDX["Native Search Index\n(Delivery)"]
+    S1["Snowflake indexes all\napproved BON terms\nautomatically"]
+  end
+  subgraph AG["Agent\n(Execution)"]
+    A1["Searches BON → reads formula\n→ writes SQL:\nSELECT COUNT(DISTINCT LIFNR)\nFROM LFA1\nWHERE KTOKK IN ('ZSTR','ZSTD')"]
+  end
+  GL -->|indexed automatically| IDX -->|search returns relevant terms| AG
+  style G1 fill:#e0e7ff,stroke:#4f46e5,color:#312e81
+  style S1 fill:#fce7f3,stroke:#db2777,color:#831843
+  style A1 fill:#d1fae5,stroke:#059669,color:#064e3b
+  </pre>
+  <div class="caption">The formula is guidance for the LLM, not executable code. The glossary stores it, the native search index delivers it, the agent writes the SQL.</div>
+</div>
+
+<hr>
+<!-- DIAGRAM 7: Architecture -->
+<h2>Architecture Summary</h2>
+<div class="diagram-box">
+  <pre class="mermaid">
+block-beta
+  columns 1
+  block:BON["BUSINESS ONTOLOGY"]:1
+    columns 3
+    D1["SAP Purchasing\n15 terms"]
+    D2["SAP Finance\n8 terms"]
+    D3["SAP Sales\n6 terms"]
+  end
+  block:KINDS["29 Terms"]:1
+    columns 3
+    K1["11 ENTITY\n(no formula)"]
+    K2["11 METRIC\n(with formula)"]
+    K3["7 TERM\n(decoders)"]
+  end
+  block:DEL["DELIVERY: Native snowscope_search (businessOntology corpus)"]:1
+    columns 1
+    SP1["Agent searches glossary index per question — no custom SP needed"]
+  end
+  block:AGT["CORTEX AGENT"]:1
+    columns 2
+    T1["Tool 1: business_ontology\n(snowscope_search — BON first)"]
+    T2["Tool 2: query_data\n(text-to-SQL via SV)"]
+  end
+  style D1 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style D2 fill:#fef3c7,stroke:#d97706,color:#78350f
+  style D3 fill:#d1fae5,stroke:#059669,color:#064e3b
+  style K1 fill:#e0e7ff,stroke:#4f46e5,color:#312e81
+  style K2 fill:#fef3c7,stroke:#d97706,color:#78350f
+  style K3 fill:#f3e8ff,stroke:#9333ea,color:#581c87
+  style SP1 fill:#fce7f3,stroke:#db2777,color:#831843
+  style T1 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style T2 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  </pre>
+</div>
+
+<hr>
+<!-- DIAGRAM 8: Bootstrap -->
+<h2>Bootstrap from Existing Knowledge</h2>
+<p>You don't have to start from scratch. Three entry points:</p>
+<div class="diagram-box">
+  <pre class="mermaid">
+flowchart TD
+  START{"What do you\nalready have?"}
+  P1["Existing Docs /\nBusiness Glossary"]
+  P2["Existing\nSemantic Views"]
+  P3["Business Expertise\n(undocumented)"]
+  A1["Import from CSV/md\nReview concepts"]
+  A2["Bootstrap from SVs\nReconcile concepts"]
+  A3["Describe in CoCo\nAI drafts, experts approve"]
+  R["Governed Glossary\nwith Formulas +\nRelationships"]
+  START --> P1 --> A1 --> R
+  START --> P2 --> A2 --> R
+  START --> P3 --> A3 --> R
+  style START fill:#fef3c7,stroke:#d97706,color:#78350f
+  style P1 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style P2 fill:#d1fae5,stroke:#059669,color:#064e3b
+  style P3 fill:#f3e8ff,stroke:#9333ea,color:#581c87
+  style A1 fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+  style A2 fill:#d1fae5,stroke:#059669,color:#064e3b
+  style A3 fill:#f3e8ff,stroke:#9333ea,color:#581c87
+  style R fill:#fef3c7,stroke:#d97706,color:#78350f
+  </pre>
+</div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>You have...</th><th>Start with</th><th>Prompt</th></tr></thead>
+  <tbody>
+    <tr><td>CSV/spreadsheet</td><td>Import</td><td><code>$business-ontology Import ontology terms from @stage/file.csv</code></td></tr>
+    <tr><td>Semantic Views</td><td>Bootstrap from SVs</td><td><code>$business-ontology Bootstrap ontology from our semantic views</code></td></tr>
+    <tr><td>dbt project</td><td>Import from dbt</td><td><code>$business-ontology Extract ontology from our dbt manifest at @stage/manifest.json</code></td></tr>
+    <tr><td>Domain knowledge</td><td>Conversational</td><td><code>$business-ontology I need to build an ontology for &lt;domain&gt;...</code></td></tr>
+    <tr><td>Cortex Sense context</td><td>Promote</td><td><code>$business-ontology Promote our &lt;context&gt; to the ontology</code></td></tr>
+    <tr><td>Nothing yet</td><td>This guide</td><td>Follow Phases 1–7 above</td></tr>
+  </tbody>
+</table>
+</div>
+
+<hr>
+<h2>Quick Reference</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Task</th><th>Prompt</th></tr></thead>
+  <tbody>
+    <tr><td>Create domain</td><td><code>$business-ontology Create a domain called &lt;name&gt;</code></td></tr>
+    <tr><td>Add entity</td><td><code>$business-ontology Add an entity called &lt;name&gt; to &lt;domain&gt;. Description: &lt;text&gt;</code></td></tr>
+    <tr><td>Add metric</td><td><code>$business-ontology Add a metric called &lt;name&gt; to &lt;domain&gt;. Formula: &lt;sql&gt;. Description: &lt;text&gt;</code></td></tr>
+    <tr><td>Add decoder</td><td><code>$business-ontology Add a term called &lt;name&gt; to &lt;domain&gt;. Description: &lt;mappings&gt;</code></td></tr>
+    <tr><td>Relationship</td><td><code>$business-ontology Define a relationship: &lt;source&gt; is related to &lt;target&gt;</code></td></tr>
+    <tr><td>Bind entity→table</td><td><code>$business-ontology In the &lt;domain&gt;, associate entity &lt;name&gt; with table &lt;FQN&gt;</code></td></tr>
+    <tr><td>Bind metric→SV</td><td><code>$business-ontology In the &lt;domain&gt;, associate metric &lt;name&gt; with semantic view &lt;FQN&gt;</code></td></tr>
+    <tr><td>Bind decoder→col</td><td><code>$business-ontology In the &lt;domain&gt;, associate term &lt;name&gt; with column &lt;col&gt; in table &lt;FQN&gt;</code></td></tr>
+    <tr><td>Bootstrap from SVs</td><td><code>$business-ontology Bootstrap ontology from our semantic views</code></td></tr>
+    <tr><td>Find relationships</td><td><code>$business-ontology Find more relationships in the &lt;domain&gt; domain</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.6/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    securityLevel: 'strict',
+    theme: 'default'
+  });
+</script>
+
+</body>
+</html>
