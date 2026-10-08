@@ -2,11 +2,6 @@
 Backend API server for the BON vs Baseline React app.
 Uses Flask + snowflake.connector (which supports config.toml connections).
 
-Setup:
-  1. pip install flask flask-cors snowflake-connector-python
-  2. Configure ~/.snowflake/config.toml with a named connection
-  3. Set SNOWFLAKE_CONNECTION_NAME env var (or use 'default')
-
 Run: python api_server.py
 Then: npm run dev (in the web/ directory)
 """
@@ -15,7 +10,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import snowflake.connector
 import json
-import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -23,14 +17,13 @@ from concurrent.futures import ThreadPoolExecutor
 app = Flask(__name__)
 CORS(app)
 
-CONNECTION_NAME = os.environ.get("SNOWFLAKE_CONNECTION_NAME", "default")
 BASELINE_AGENT = "DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BASELINE_AGENT"
-BON_AGENT = "DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BON_AGENT"
+BON_AGENT = "DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.BON_SV_NATIVE_AGENT"
 
 
 def get_connection():
     return snowflake.connector.connect(
-        connection_name=CONNECTION_NAME,
+        connection_name="tjia_demo_aws2",
         database="DB_ONTOLOGY_CONTROL_PLANE",
         schema="SAP_PRODUCTION",
     )
@@ -109,20 +102,6 @@ def agent_endpoint():
         bon = f_bon.result()
 
     return jsonify({"baseline": baseline, "bon": bon})
-
-
-@app.route("/api/context", methods=["GET"])
-def context_endpoint():
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("CALL DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SP_GET_SAP_BON_CONTEXT()")
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        return jsonify({"raw": row[0] if row else ""})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":

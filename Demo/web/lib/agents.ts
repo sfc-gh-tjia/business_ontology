@@ -2,7 +2,7 @@ import { executeQuery } from "./snowflake";
 import { AgentResponse } from "./types";
 
 const BASELINE_AGENT = "DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BASELINE_AGENT";
-const BON_AGENT = "DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BON_AGENT";
+const BON_AGENT = "DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.BON_SV_NATIVE_AGENT";
 
 function parseAgentResponse(raw: string): AgentResponse {
   const htmlArtifacts: string[] = [];

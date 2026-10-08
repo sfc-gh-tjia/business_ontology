@@ -91,8 +91,8 @@ export default function OntologyViewer() {
       </div>
 
       <div className="bg-sky-50 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 rounded-lg px-4 py-3 mb-5 text-sm">
-        The BON agent calls <code className="text-xs">SP_GET_SAP_BON_CONTEXT()</code> before
-        answering each question. This returns SAP field decoders, authoritative metric formulas,
+        The BON agent uses Snowflake&apos;s native <code className="text-xs">snowscope_search</code> with the
+        <code className="text-xs">businessOntology</code> corpus to find relevant SAP field decoders, authoritative metric formulas,
         and <strong>cross-domain relationship maps</strong> connecting Purchasing, Finance, and Sales.
         The baseline agent has none of this context.
       </div>
