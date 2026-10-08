@@ -28,25 +28,28 @@ Semantic View alone                 Semantic View + Business Ontology
 | Requirement | Details |
 |---|---|
 | **Snowflake account** | Business Ontology feature flag enabled (Private Preview) |
-| **Access** | Snowsight (Catalog > Business Ontology) or Cortex Code (CoCo) Desktop/CLI |
+| **Snowsight access** | Navigate to Catalog > Business Ontology |
 | **Role** | ACCOUNTADMIN (or role with glossary API access) |
 | **Your data** | Tables already loaded in Snowflake |
+| **CoCo (optional)** | Cortex Code Desktop/CLI — for bulk import, AI extraction, and advanced skill workflows |
 
-### Two Ways to Get Started
+### Getting Started in Snowsight
 
-**Option 1 — Snowsight UI:**
+In Snowsight, go to **Catalog > Business Ontology (Preview)**. Click **Generate Ontology** to create your first domain and start adding terms interactively.
 
-In Snowsight, go to **Catalog > Business Ontology (Preview)**. Click **Generate Ontology** to start creating your ontology interactively.
+<!-- SCREENSHOT: Snowsight Catalog > Business Ontology landing page with "Generate Ontology" button -->
+<!-- TODO: Replace this placeholder with actual screenshot -->
+![Snowsight Business Ontology UI](screenshots/snowsight-bon-landing.png)
 
-**Option 2 — CoCo Skill (recommended for power users):**
+### CoCo Skill (optional — for power users)
 
-In CoCo Desktop or CLI, use the `$business-ontology` skill. It supports bulk import, AI-assisted extraction, and conversational authoring.
+For bulk import, AI-assisted extraction from files/SVs/dbt, and conversational authoring, install the `$business-ontology` CoCo skill:
 
-To install the skill:
 ```
 /find-skill business-ontology
 ```
-Follow the prompts to install. If not available in the catalog, obtain the `business-ontology/` folder from your Snowflake account team and copy it to `~/.snowflake/cortex/skills/business-ontology/`.
+
+If not available in the catalog, obtain the folder from your Snowflake account team and copy to `~/.snowflake/cortex/skills/business-ontology/`.
 
 ---
 
