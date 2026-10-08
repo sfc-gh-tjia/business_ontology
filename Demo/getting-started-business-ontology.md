@@ -1,6 +1,6 @@
 # Getting Started with Business Ontology
 
-> **Private Preview** — Business Ontology must be enabled on your Snowflake account before use. Contact your Snowflake account team or SE.
+> **Private Preview** — Business Ontology must be enabled on your Snowflake account. In Snowsight, go to **Catalog > Business Ontology** to check. Contact your Snowflake account team to enable.
 
 ---
 
@@ -28,29 +28,25 @@ Semantic View alone                 Semantic View + Business Ontology
 | Requirement | Details |
 |---|---|
 | **Snowflake account** | Business Ontology feature flag enabled (Private Preview) |
-| **Cortex Code (CoCo)** | Desktop app with skills support |
-| **BON CoCo Skill** | Installed at `~/.snowflake/cortex/skills/business-ontology/` |
+| **Access** | Snowsight (Catalog > Business Ontology) or Cortex Code (CoCo) Desktop/CLI |
 | **Role** | ACCOUNTADMIN (or role with glossary API access) |
 | **Your data** | Tables already loaded in Snowflake |
 
-### Install the CoCo Skill
+### Two Ways to Get Started
 
-**Option 1 — From the Cortex Extension catalog (if available in your account):**
+**Option 1 — Snowsight UI:**
 
-In CoCo, type:
+In Snowsight, go to **Catalog > Business Ontology (Preview)**. Click **Generate Ontology** to start creating your ontology interactively.
+
+**Option 2 — CoCo Skill (recommended for power users):**
+
+In CoCo Desktop or CLI, use the `$business-ontology` skill. It supports bulk import, AI-assisted extraction, and conversational authoring.
+
+To install the skill:
 ```
 /find-skill business-ontology
 ```
-Follow the prompts to install. This is the preferred method when the skill is published to your account's catalog.
-
-**Option 2 — Manual install (Private Preview):**
-
-If the skill is not yet in the catalog, obtain the `business-ontology/` folder from your Snowflake account team or SE, then copy it:
-```bash
-cp -r /path/to/business-ontology ~/.snowflake/cortex/skills/business-ontology
-```
-
-Restart CoCo. The skill auto-loads when you use natural language triggers like "create a domain" or "add a metric".
+Follow the prompts to install. If not available in the catalog, obtain the `business-ontology/` folder from your Snowflake account team and copy it to `~/.snowflake/cortex/skills/business-ontology/`.
 
 ---
 
@@ -70,7 +66,6 @@ By the end of this guide you will have:
 | **Relationships** | 8 | Cross-domain connections (Supplier→Material, PO→AP, etc.) |
 | **Representations** | 29 | Bind terms to physical Snowflake objects (optional for agent, recommended for governance) |
 | **Cortex Agent** | 1 | Uses native BON search + Semantic View to answer questions |
-| **Cortex Agent** | 1 | Uses ontology context + Semantic View to answer questions |
 
 ---
 
@@ -709,7 +704,7 @@ The formula is **guidance for the LLM**, not executable code. The glossary store
 | `Unknown function SYSTEM$CREATE_GLOSSARY_DOMAIN` | Feature flag not enabled | Contact your Snowflake account team |
 | `Invalid identifier` in formula | Single quotes not escaped | Use `''` inside SQL strings within JSON |
 | Relationship draft fails | Wrong API format | Use positional args, not JSON object |
-| Agent ignores formulas | Instructions don't enforce context-first | Add STEP 1/2/3/4 orchestration instructions |
+| Agent ignores formulas | BON search not configured or instructions don't enforce "search BON first" | Verify `EnableSnowscopeBusinessOntologySearch: true` and `corpus: businessOntology` in agent spec |
 | Formula returns wrong number | Credit memo / exclusion logic missing | Check BON formula — it encodes sign logic |
 | Agent uses OTRAT instead of computing OTD | No warning about unreliable self-reported data | Add WARNING in formula description |
 | Skill can't find a term by name | Ambiguous name across domains | Use full name or specify domain |
@@ -800,3 +795,12 @@ $business-ontology Add more context: our COGS calculation must subtract credit m
 | Nothing yet | Phase 1–5 above | Follow the step-by-step prompts in this guide |
 
 All paths converge to the same result: governed glossary terms with formulas, connected by relationships, ready to surface through a Cortex Agent.
+
+---
+
+## References
+
+- [Business Ontology](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology) — Overview and concepts
+- [Access Control](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology-access-control) — Domain-level permissions
+- [Agent Integration](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology-agents) — Native `snowscope_search` with `businessOntology` corpus
+- [Cortex Sense](https://docs.snowflake.com/LIMITEDACCESS/cortex-sense) — Managed runtime that integrates BON alongside tables and semantic views
