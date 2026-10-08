@@ -3,7 +3,7 @@
 A side-by-side evaluation of two Cortex Agents on a realistic SAP procurement dataset:
 
 - **Baseline Agent** — Semantic View only (tables, columns, joins, aggregations)
-- **BON Agent** — Semantic View + Business Ontology (formulas, decoders, cross-domain relationships)
+- **BON Agent** — Semantic View + Business Ontology via native `snowscope_search` (formulas, decoders, cross-domain relationships)
 
 **Result: Baseline 27% (3/11) vs BON 100% (11/11)**
 
@@ -12,22 +12,20 @@ The 8 questions Baseline fails all require business knowledge that doesn't fit i
 ## Prerequisites
 
 - Snowflake account with ACCOUNTADMIN (or role with CREATE DATABASE, CREATE AGENT, glossary privileges)
-- A named connection in `~/.snowflake/config.toml`
-- Node.js 18+ and Python 3.10+
+- Business Ontology Private Preview feature flag enabled on your account
+- Node.js 18+ and Python 3.10+ (for the web app)
 
 ## Setup
 
-### 0. Business Ontology CoCo Skill (required)
+### 0. Business Ontology CoCo Skill (optional, for authoring)
 
-Install the `business-ontology` skill in Cortex Code before proceeding — it is required to create and manage BON glossary domains, terms, and relationships:
+The `business-ontology` CoCo skill provides natural-language commands to create and manage BON glossary domains, terms, and relationships. You can also create them directly in Snowsight or via SYSTEM$ SQL calls.
 
+If using CoCo:
 ```bash
-# From the Cortex Code skills catalog:
-# Search for "business-ontology" in the skill marketplace, or install manually:
+# Search for "business-ontology" in the CoCo skill marketplace, or install manually:
 cp -r <path-to-skill>/business-ontology ~/.snowflake/cortex/skills/business-ontology
 ```
-
-The skill requires the **Business Ontology Private Preview** feature flag to be enabled on your account. Contact your Snowflake account team for enablement.
 
 Once installed, you can use natural language in CoCo:
 - `"create a domain called SAP Finance"`
@@ -39,30 +37,16 @@ Once installed, you can use natural language in CoCo:
 
 ```bash
 # In Snowsight or SnowSQL, run each script sequentially:
-sql/01_setup_database.sql       # Create database, schema, warehouse
-sql/02_create_sap_tables.sql    # 15 SAP tables with data (266 rows)
-sql/03_create_semantic_view.sql # SAP_BASELINE_SV (14 tables, 12 relationships)
-sql/04_create_bon_context_sp.sql # SP_GET_SAP_BON_CONTEXT stored procedure
-sql/05_create_agents.sql        # SAP_BASELINE_AGENT + SAP_BON_AGENT
+sql/01_setup_database.sql        # Create database, schema, warehouse
+sql/02_create_sap_tables.sql     # 15 SAP tables with data (266 rows)
+sql/03_create_semantic_view.sql  # SAP_BASELINE_SV (14 tables, 12 relationships)
+sql/04_create_agents.sql         # SAP_BASELINE_AGENT + BON_SV_NATIVE_AGENT
+sql/05_create_bon_glossary.sql   # 3 domains, 29 terms, 8 relationships
 ```
 
-### 2. BON Glossary (for Snowsight visualization)
+> **Note:** The BON agent (`BON_SV_NATIVE_AGENT`) uses Snowflake's native `snowscope_search` with the `businessOntology` corpus — no custom stored procedure needed. The glossary terms (script 05) must be created and approved before the agent can search them.
 
-```bash
-sql/06_create_bon_glossary.sql  # 3 domains, 29 terms, 8 relationships
-```
-
-This script uses `SYSTEM$DRAFT_GLOSSARY_TERM` and `SYSTEM$APPROVE_GLOSSARY_TERM`. Each DRAFT call returns a `termId` — you must pass it to the corresponding APPROVE call. Run the statements one at a time and note the returned IDs.
-
-**Optional: Bind terms to physical objects (representations).** This links glossary terms to their tables/columns/SV in the Snowflake catalog for lineage and governance. Not required for the agent demo. Use the business-ontology CoCo skill:
-
-```
-$business-ontology In the SAP Purchasing domain, associate the entity Supplier with table DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.LFA1
-```
-
-See `getting-started-business-ontology.md` Phase 7 for all 29 representation prompts.
-
-### 3. Web App
+### 2. Web App
 
 ```bash
 cd Demo/web
@@ -109,10 +93,9 @@ Full scorecard with detailed breakdown of why baseline fails and BON succeeds fo
 ┌─────────────────────────┐     ┌──────────────────────┐
 │   Next.js Frontend      │────▶│  Flask API (:5001)   │
 │   localhost:3000        │     │  /api/agent           │
-│                         │     │  /api/context         │
-│  Context | Demo | Analysis    └──────────┬───────────┘
-└─────────────────────────┘                │
-                                           ▼
+│                         │     └──────────┬───────────┘
+│  Context | Demo | Analysis               │
+└─────────────────────────┘                ▼
                               ┌──────────────────────┐
                               │  Snowflake            │
                               │  DATA_AGENT_RUN()     │
@@ -120,12 +103,28 @@ Full scorecard with detailed breakdown of why baseline fails and BON succeeds fo
                               │  SAP_BASELINE_AGENT   │
                               │    └─ SAP_BASELINE_SV │
                               │                       │
-                              │  SAP_BON_AGENT        │
+                              │  BON_SV_NATIVE_AGENT  │
                               │    ├─ SAP_BASELINE_SV │
-                              │    └─ SP_GET_SAP_BON_ │
-                              │       CONTEXT()       │
+                              │    └─ snowscope_search│
+                              │       (businessOntology│
+                              │        corpus)         │
                               └───────────────────────┘
 ```
+
+## How the Native BON Agent Works
+
+Instead of a custom stored procedure that bulk-dumps all glossary terms, the native approach uses Snowflake's built-in `snowscope_search` tool with the `businessOntology` corpus:
+
+1. **Agent receives a question** — e.g., "What is COGS for raw materials?"
+2. **Searches BON index** — the `business_ontology` tool searches the glossary for relevant terms (COGS formula, material group decoder, sign convention)
+3. **Applies business context** — uses the returned formulas and decoders to construct the correct SQL
+4. **Queries data** — calls `query_sap` (Cortex Analyst) with business-informed SQL
+5. **Returns answer** — with both the governed formula and the data result
+
+This is more efficient than the SP approach because:
+- **Search-based**: Retrieves only relevant terms per question, not all 29
+- **No custom code**: No Python SP to maintain — BON glossary is the single source of truth
+- **Auto-indexed**: Glossary changes are reflected automatically
 
 ## Key Insight
 
