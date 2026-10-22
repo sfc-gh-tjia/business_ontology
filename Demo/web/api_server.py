@@ -73,9 +73,11 @@ def call_single_agent(question, agent_fqn):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        print(f"[{agent_fqn.split('.')[-1]}] Executing DATA_AGENT_RUN...", flush=True)
         cur.execute(sql)
         row = cur.fetchone()
         elapsed = round(time.time() - start, 1)
+        print(f"[{agent_fqn.split('.')[-1]}] Done in {elapsed}s, row={'yes' if row else 'no'}", flush=True)
         cur.close()
         conn.close()
         if row:
@@ -84,6 +86,7 @@ def call_single_agent(question, agent_fqn):
             return parsed
     except Exception as e:
         elapsed = round(time.time() - start, 1)
+        print(f"[{agent_fqn.split('.')[-1]}] ERROR: {type(e).__name__}: {e}", flush=True)
         return {"text": f"Error: {str(e)}", "htmlArtifacts": [], "elapsed": elapsed}
     return {"text": "No response.", "htmlArtifacts": [], "elapsed": 0}
 
@@ -98,12 +101,21 @@ def agent_endpoint():
     with ThreadPoolExecutor(max_workers=2) as executor:
         f_baseline = executor.submit(call_single_agent, question, BASELINE_AGENT)
         f_bon = executor.submit(call_single_agent, question, BON_AGENT)
-        baseline = f_baseline.result()
-        bon = f_bon.result()
+        try:
+            baseline = f_baseline.result(timeout=180)
+        except Exception as e:
+            baseline = {"text": f"Error: {e}", "htmlArtifacts": [], "elapsed": 0}
+        try:
+            bon = f_bon.result(timeout=180)
+        except Exception as e:
+            bon = {"text": f"Error: {e}", "htmlArtifacts": [], "elapsed": 0}
+
+    baseline = baseline or {"text": "No response.", "htmlArtifacts": [], "elapsed": 0}
+    bon = bon or {"text": "No response.", "htmlArtifacts": [], "elapsed": 0}
 
     return jsonify({"baseline": baseline, "bon": bon})
 
 
 if __name__ == "__main__":
     print("Starting BON eval API server on http://localhost:5001")
-    app.run(port=5001, debug=True)
+    app.run(port=5001, debug=False)

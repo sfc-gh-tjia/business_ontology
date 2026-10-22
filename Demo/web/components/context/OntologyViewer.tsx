@@ -38,7 +38,7 @@ const FORMULAS = [
   { name: "11. Cost Center Total", formula: "COEP WHERE OBJNR=cost_object_code", desc: "KS-MFG-US=US Mfg, KS-LOG=Logistics.", domain: "Finance" },
 ];
 
-const SAP_DECODERS = [
+const SAP_CODE_MAPPINGS = [
   { code: "KTOKK", values: "ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary", domain: "Purchasing" },
   { code: "MATKL", values: "043=Electronics, 044=Chemicals, 045=Metals...", domain: "Purchasing" },
   { code: "BSCHL", values: "31=Invoice (positive), 34=Credit Memo (SUBTRACT)", domain: "Finance" },
@@ -84,7 +84,7 @@ export default function OntologyViewer() {
         <h3 className="text-lg font-semibold">Business Ontology (BON)</h3>
         <div className="flex gap-4 text-sm text-[var(--text-muted)]">
           <span><strong className="text-[var(--text)]">11</strong> formulas</span>
-          <span><strong className="text-[var(--text)]">7</strong> code decoders</span>
+          <span><strong className="text-[var(--text)]">7</strong> code mappings</span>
           <span><strong className="text-[var(--text)]">11</strong> relationships</span>
           <span className="text-[var(--bon)]">3 domains (Purchasing, Finance, Sales)</span>
         </div>
@@ -92,7 +92,7 @@ export default function OntologyViewer() {
 
       <div className="bg-sky-50 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 rounded-lg px-4 py-3 mb-5 text-sm">
         The BON agent uses Snowflake&apos;s native <code className="text-xs">snowscope_search</code> with the
-        <code className="text-xs">businessOntology</code> corpus to find relevant SAP field decoders, authoritative metric formulas,
+        <code className="text-xs">businessOntology</code> corpus to find relevant SAP field code mappings, authoritative metric formulas,
         and <strong>cross-domain relationship maps</strong> connecting Purchasing, Finance, and Sales.
         The baseline agent has none of this context.
       </div>
@@ -115,13 +115,13 @@ export default function OntologyViewer() {
           </div>
         </div>
 
-        {/* SAP Code Decoders */}
+        {/* SAP Code Mappings */}
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            SAP Code Decoders (7)
+            SAP Code Mappings (7)
           </h4>
           <div className="space-y-1">
-            {SAP_DECODERS.map((d) => (
+            {SAP_CODE_MAPPINGS.map((d) => (
               <div key={d.code} className="px-3 py-1.5 rounded bg-[var(--bg)] border border-[var(--border)] text-xs">
                 <span className="font-mono font-semibold">{d.code}</span>
                 <span className="ml-2 text-[var(--text-muted)]">{d.values}</span>

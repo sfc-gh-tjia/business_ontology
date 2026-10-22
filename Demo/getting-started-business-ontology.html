@@ -85,7 +85,7 @@
 <div class="banner">Private Preview — Business Ontology must be enabled on your Snowflake account before use. Contact your Snowflake account team or SE.</div>
 
 <h2>What is Business Ontology?</h2>
-<p>Business Ontology is Snowflake's governed vocabulary layer. It lets you define what business concepts mean — metrics, entities, decoder tables, formulas — and how they relate to each other. Once defined, Cortex Agents use this knowledge to answer questions that require understanding beyond raw table schemas.</p>
+<p>Business Ontology is Snowflake's governed vocabulary layer. It lets you define what business concepts mean — metrics, entities, code-mapping terms, formulas — and how they relate to each other. Once defined, Cortex Agents use this knowledge to answer questions that require understanding beyond raw table schemas.</p>
 <p><strong>The core problem it solves:</strong> A Semantic View teaches an agent <em>how to query</em> (tables, columns, joins). Business Ontology teaches it <em>what the answer means</em> (which vendors count as "canonical", how to handle credit memos, what formula to use for COGS).</p>
 
 <!-- DIAGRAM 1: SV vs BON -->
@@ -114,7 +114,7 @@ WHERE KTOKK IN ('ZSTR','ZSTD')</code></pre>
   <div class="stat"><div class="n">3</div><div class="l">Domains</div></div>
   <div class="stat"><div class="n">11</div><div class="l">Entities</div></div>
   <div class="stat"><div class="n">11</div><div class="l">Formulas</div></div>
-  <div class="stat"><div class="n">7</div><div class="l">Decoders</div></div>
+  <div class="stat"><div class="n">7</div><div class="l">Code Mappings</div></div>
   <div class="stat"><div class="n">8</div><div class="l">Relationships</div></div>
   <div class="stat"><div class="n">29</div><div class="l">Representations</div></div>
 </div>
@@ -129,7 +129,7 @@ flowchart LR
   P1["Phase 1\nCreate Domains"]
   P2["Phase 2\nAdd Entities"]
   P3["Phase 3\nAdd Metrics\n+ Formulas"]
-  P4["Phase 4\nAdd Decoders"]
+  P4["Phase 4\nAdd Code Mappings"]
   P5["Phase 5\nDefine\nRelationships"]
   P6["Phase 6\nVerify"]
   P7["Phase 7\nBind\nRepresentations"]
@@ -224,21 +224,21 @@ Description: K007=discount only. EXCLUDE KF00 (surcharges) and PR00 (base prices
 Formula: SUM(VBAP.NETWR) for assemblies from Supplier Disruption Cascade
 Description: Revenue at risk. 5-hop: Supplier -> Materials -> BOM -> Assemblies -> Sales.</div>
 
-<h3>Phase 4: Add Decoders (7 total)</h3>
-<p>Decoders map SAP field codes to business meanings. <code>itemKind: "TERM"</code>, no formula.</p>
-<div class="prompt-block">$business-ontology Add a term called KTOKK Account Group Decoder to SAP Purchasing.
+<h3>Phase 4: Add Code-Mapping Terms (7 total)</h3>
+<p>Code-mapping terms capture the meaning of SAP field codes. <code>itemKind: "TERM"</code>, no formula.</p>
+<div class="prompt-block">$business-ontology Add a term called KTOKK Account Group to SAP Purchasing.
 Description: ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary (exclude from counts)</div>
-<div class="prompt-block">$business-ontology Add a term called MATKL Material Group Decoder to SAP Purchasing.
+<div class="prompt-block">$business-ontology Add a term called MATKL Material Group to SAP Purchasing.
 Description: 043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials</div>
-<div class="prompt-block">$business-ontology Add a term called BSCHL Posting Key Decoder to SAP Finance.
+<div class="prompt-block">$business-ontology Add a term called BSCHL Posting Key to SAP Finance.
 Description: 31=Invoice (positive), 34=Credit memo (SUBTRACT from totals)</div>
-<div class="prompt-block">$business-ontology Add a term called HKONT GL Account Decoder to SAP Finance.
+<div class="prompt-block">$business-ontology Add a term called HKONT GL Account to SAP Finance.
 Description: 0040100000=COGS Raw Materials, 0040200000=COGS Freight</div>
-<div class="prompt-block">$business-ontology Add a term called OBJNR Cost Object Decoder to SAP Finance.
+<div class="prompt-block">$business-ontology Add a term called OBJNR Cost Object to SAP Finance.
 Description: KS-MFG-US/EU/AP=Manufacturing, KS-LOG=Logistics, KS-QA=Quality</div>
-<div class="prompt-block">$business-ontology Add a term called KSCHL Condition Type Decoder to SAP Sales.
+<div class="prompt-block">$business-ontology Add a term called KSCHL Condition Type to SAP Sales.
 Description: PR00=Base Price, K007=Discount (include), KF00=Surcharge (EXCLUDE from discounts)</div>
-<div class="prompt-block">$business-ontology Add a term called VKORG Sales Org Decoder to SAP Sales.
+<div class="prompt-block">$business-ontology Add a term called VKORG Sales Org to SAP Sales.
 Description: 1000=Americas, 2000=EMEA, 3000=APAC</div>
 
 <h3>Phase 5: Define Relationships (8 total)</h3>
@@ -268,9 +268,9 @@ graph LR
   MAT -->|HAS_PART| BOM
   PO -->|RELATED_TO| SUP
   CARR -->|RELATED_TO| SHIP
-  INSP -->|RELATED_TO| MAT
-  PO -->|RELATED_TO| AP
-  AP -->|RELATED_TO| COST
+  INSP -->|MEASURES| MAT
+  PO -->|DERIVES| AP
+  AP -->|DERIVES| COST
   SO -->|RELATED_TO| MAT
   style SUP fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
   style MAT fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
@@ -284,16 +284,16 @@ graph LR
   style SO fill:#d1fae5,stroke:#059669,color:#064e3b
   style PRICE fill:#d1fae5,stroke:#059669,color:#064e3b
   </pre>
-  <div class="caption">Blue = Purchasing, Yellow = Finance, Green = Sales. Cross-domain: PO→AP, AP→Cost, Sales Order→Material.</div>
+  <div class="caption">Blue = Purchasing, Yellow = Finance, Green = Sales. Relationship types: RELATED_TO (general), HAS_PART (structural), MEASURES (quantifies), DERIVES (cross-domain chains).</div>
 </div>
 
 <div class="prompt-block">$business-ontology Define a relationship: Supplier is related to Material</div>
 <div class="prompt-block">$business-ontology Define a relationship: Material has part BOM Item</div>
 <div class="prompt-block">$business-ontology Define a relationship: Purchase Order is related to Supplier</div>
 <div class="prompt-block">$business-ontology Define a relationship: Carrier is related to Shipment</div>
-<div class="prompt-block">$business-ontology Define a relationship: Inspection is related to Material</div>
-<div class="prompt-block">$business-ontology Define a relationship: Purchase Order is related to AP Line Item</div>
-<div class="prompt-block">$business-ontology Define a relationship: AP Line Item is related to Cost Posting</div>
+<div class="prompt-block">$business-ontology Define a relationship: Inspection measures Material</div>
+<div class="prompt-block">$business-ontology Define a relationship: Purchase Order derives AP Line Item</div>
+<div class="prompt-block">$business-ontology Define a relationship: AP Line Item derives Cost Posting</div>
 <div class="prompt-block">$business-ontology Define a relationship: Sales Order is related to Material</div>
 
 <h3>Phase 6: Verify</h3>
@@ -311,7 +311,7 @@ flowchart TD
   subgraph G["Glossary Terms"]
     E["11 Entities"]
     M["11 Metrics"]
-    D["7 Decoders"]
+    D["7 Code Mappings"]
   end
   subgraph P["Physical Objects"]
     T["11 Tables\nLFA1, MARA, EKPO..."]
@@ -333,7 +333,7 @@ flowchart TD
 <p>Example prompts (run all 29 — see full list in the markdown doc):</p>
 <div class="prompt-block">$business-ontology In the SAP Purchasing domain, associate the entity Supplier with table DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.LFA1</div>
 <div class="prompt-block">$business-ontology In the SAP Finance domain, associate the metric COGS Raw Materials with semantic view DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BASELINE_SV</div>
-<div class="prompt-block">$business-ontology In the SAP Finance domain, associate the term BSCHL Posting Key Decoder with column BSCHL in table DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.BSEG</div>
+<div class="prompt-block">$business-ontology In the SAP Finance domain, associate the term BSCHL Posting Key with column BSCHL in table DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.BSEG</div>
 
 <hr>
 <h2>Surfacing Ontology Through a Cortex Agent</h2>
@@ -346,7 +346,7 @@ flowchart TD
   Q["User Question"]
   A["Cortex Agent"]
   T1["Tool 1: business_ontology\n(snowscope_search — ALWAYS first)"]
-  IDX["Native search index finds\nrelevant definitions, formulas,\ndecoders, relationships"]
+  IDX["Native search index finds\nrelevant definitions, formulas,\ncode mappings, relationships"]
   T2["Tool 2: query_data\n(text-to-SQL)"]
   SV["Semantic View\n(14 tables, 12 joins)"]
   ANS["Correct Answer"]
@@ -367,7 +367,7 @@ flowchart TD
 <div class="three-cats">
   <div class="cat-card cat1">
     <div class="cn">7</div>
-    <div class="ct">Code Decoders</div>
+    <div class="ct">Code Mappings</div>
     <div class="cd">KTOKK, MATKL, BSCHL, HKONT, KSCHL, OBJNR, VKORG</div>
     <div class="ce">Agent knows: ZPRB = Probationary (exclude from counts)</div>
   </div>
@@ -424,7 +424,7 @@ block-beta
     columns 3
     K1["11 ENTITY\n(no formula)"]
     K2["11 METRIC\n(with formula)"]
-    K3["7 TERM\n(decoders)"]
+    K3["7 TERM\n(code mappings)"]
   end
   block:DEL["DELIVERY: Native snowscope_search (businessOntology corpus)"]:1
     columns 1
@@ -499,11 +499,11 @@ flowchart TD
     <tr><td>Create domain</td><td><code>$business-ontology Create a domain called &lt;name&gt;</code></td></tr>
     <tr><td>Add entity</td><td><code>$business-ontology Add an entity called &lt;name&gt; to &lt;domain&gt;. Description: &lt;text&gt;</code></td></tr>
     <tr><td>Add metric</td><td><code>$business-ontology Add a metric called &lt;name&gt; to &lt;domain&gt;. Formula: &lt;sql&gt;. Description: &lt;text&gt;</code></td></tr>
-    <tr><td>Add decoder</td><td><code>$business-ontology Add a term called &lt;name&gt; to &lt;domain&gt;. Description: &lt;mappings&gt;</code></td></tr>
+    <tr><td>Add code-mapping term</td><td><code>$business-ontology Add a term called &lt;name&gt; to &lt;domain&gt;. Description: &lt;mappings&gt;</code></td></tr>
     <tr><td>Relationship</td><td><code>$business-ontology Define a relationship: &lt;source&gt; is related to &lt;target&gt;</code></td></tr>
     <tr><td>Bind entity→table</td><td><code>$business-ontology In the &lt;domain&gt;, associate entity &lt;name&gt; with table &lt;FQN&gt;</code></td></tr>
     <tr><td>Bind metric→SV</td><td><code>$business-ontology In the &lt;domain&gt;, associate metric &lt;name&gt; with semantic view &lt;FQN&gt;</code></td></tr>
-    <tr><td>Bind decoder→col</td><td><code>$business-ontology In the &lt;domain&gt;, associate term &lt;name&gt; with column &lt;col&gt; in table &lt;FQN&gt;</code></td></tr>
+    <tr><td>Bind term→col</td><td><code>$business-ontology In the &lt;domain&gt;, associate term &lt;name&gt; with column &lt;col&gt; in table &lt;FQN&gt;</code></td></tr>
     <tr><td>Bootstrap from SVs</td><td><code>$business-ontology Bootstrap ontology from our semantic views</code></td></tr>
     <tr><td>Find relationships</td><td><code>$business-ontology Find more relationships in the &lt;domain&gt; domain</code></td></tr>
   </tbody>

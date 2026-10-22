@@ -6,7 +6,7 @@
 
 ## What is Business Ontology?
 
-Business Ontology is Snowflake's governed vocabulary layer. It lets you define what business concepts mean — metrics, entities, decoder tables, formulas — and how they relate to each other. Once defined, Cortex Agents use this knowledge to answer questions that require understanding beyond raw table schemas.
+Business Ontology is Snowflake's governed vocabulary layer. It lets you define what business concepts mean — metrics, entities, code-mapping terms, formulas — and how they relate to each other. Once defined, Cortex Agents use this knowledge to answer questions that require understanding beyond raw table schemas.
 
 **The core problem it solves:** A Semantic View teaches an agent *how to query* (tables, columns, joins). Business Ontology teaches it *what the answer means* (which vendors count as "canonical", how to handle credit memos, what formula to use for COGS).
 
@@ -56,7 +56,7 @@ If not available in the catalog, obtain the folder from your Snowflake account t
 ## What You'll Build
 
 <!-- VISUAL: Stat cards grid (see getting-started-business-ontology.html, "What You'll Build" section) -->
-<!-- 3 Domains | 11 Entities | 11 Metrics | 7 Decoders | 8 Relationships | 29 Representations -->
+<!-- 3 Domains | 11 Entities | 11 Metrics | 7 Code-Mapping Terms | 8 Relationships | 29 Representations -->
 
 By the end of this guide you will have:
 
@@ -65,7 +65,7 @@ By the end of this guide you will have:
 | **Domains** | 3 | Group concepts by business area |
 | **Entity nodes** | 11 | Business objects (Supplier, Material, PO, etc.) |
 | **Metric nodes** | 11 | Formulas with business rules (COGS, OTD, Risk, etc.) |
-| **Decoder terms** | 7 | SAP field code mappings (MATKL, BSCHL, HKONT, etc.) |
+| **Code-mapping terms** | 7 | SAP field code mappings (MATKL, BSCHL, HKONT, etc.) — `itemKind: TERM` |
 | **Relationships** | 8 | Cross-domain connections (Supplier→Material, PO→AP, etc.) |
 | **Representations** | 29 | Bind terms to physical Snowflake objects (optional for agent, recommended for governance) |
 | **Cortex Agent** | 1 | Uses native BON search + Semantic View to answer questions |
@@ -196,7 +196,7 @@ SAP Finance domain:
 9. Cost Center Total
    Formula: SUM(WRTBTR) FROM COEP WHERE OBJNR = cost_object_code
    Description: Total cost allocated to a specific cost center.
-   OBJNR decoder: KS-MFG-US=US Manufacturing ($419,750), KS-MFG-EU=EU Manufacturing,
+   OBJNR code mapping: KS-MFG-US=US Manufacturing ($419,750), KS-MFG-EU=EU Manufacturing,
    KS-MFG-AP=APAC Manufacturing, KS-LOG=Logistics, KS-QA=Quality Assurance.
 
 SAP Sales domain:
@@ -216,35 +216,45 @@ SAP Sales domain:
 
 ---
 
-### Phase 4: Add Decoder Terms
+### Phase 4: Add Code-Mapping Terms
 
-Decoders map SAP field codes to human-readable business meanings. They use `itemKind: "TERM"` and have no formula.
+Code-mapping terms capture the meaning of cryptic ERP field codes. They use `itemKind: "TERM"` (the same kind as any general business concept) and have no formula. Their descriptions contain the code-to-meaning mappings the agent needs.
 
 ```
-$business-ontology Add the following decoder terms:
+$business-ontology Add the following code-mapping terms:
 
 SAP Purchasing domain:
-1. MATKL Material Group Decoder — SAP material group codes:
+1. MATKL Material Group — SAP material group codes:
    043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials, 048=Assembly
-2. KTOKK Account Group Decoder — SAP vendor account groups:
+2. KTOKK Account Group — SAP vendor account groups:
    ZSTR=Strategic partner, ZSTD=Standard vendor, ZPRB=Probationary (exclude from active counts)
 
 SAP Finance domain:
-3. BSCHL Posting Key Decoder — SAP posting keys:
+3. BSCHL Posting Key — SAP posting keys:
    31=Vendor invoice (positive, add to totals), 34=Credit memo (negative, SUBTRACT from totals)
-4. HKONT GL Account Decoder — SAP GL accounts:
+4. HKONT GL Account — SAP GL accounts:
    0040100000=COGS Raw Materials, 0040200000=COGS Freight, 0021100000=Accounts Payable
-5. OBJNR Cost Object Decoder — SAP cost objects:
+5. OBJNR Cost Object — SAP cost objects:
    KS-MFG-US=US Manufacturing, KS-MFG-EU=EU Manufacturing, KS-MFG-AP=APAC Manufacturing,
    KS-LOG=Logistics, KS-QA=Quality Assurance
 
 SAP Sales domain:
-6. KSCHL Condition Type Decoder — SAP pricing condition types:
+6. KSCHL Condition Type — SAP pricing condition types:
    PR00=Base/list price, K007=Customer discount (include in discount calculations),
    KF00=Freight surcharge (EXCLUDE from discount calculations)
-7. VKORG Sales Org Decoder — SAP sales organizations:
+7. VKORG Sales Org — SAP sales organizations:
    1000=Americas, 2000=EMEA, 3000=APAC
 ```
+
+> **Scaling code-mapping terms: one term per code field, not per code value.** In this demo we inline a handful of codes per term (e.g., 6 MATKL values). That works when the agent only needs a few business-critical codes. But real enterprises have code tables with tens of thousands or millions of values (e.g., 3M's product codes). The pattern for scale:
+>
+> 1. **BON holds the code-mapping pattern, not the full lookup.** Create one TERM per code field: *"MATKL Material Group — maps material group codes to categories. Key business-rule codes: 047=Raw Materials (used in COGS), 048=Assembly (used in BOM). Full mapping in reference table T023."* The term describes what the code means and which values matter for business rules.
+>
+> 2. **The reference table holds the full mapping.** The actual code/description table (e.g., T023 for MATKL, T077D for material types) lives in Snowflake as a regular table. The Semantic View includes a join relationship to it. The agent JOINs at query time to decode any code it encounters.
+>
+> 3. **Sync is a data problem, not an ontology problem.** New product codes arrive via normal ETL/CDC into the reference table. The BON term only needs updating when the *business rules around codes change* (e.g., a new account group that should be excluded from counts) — not when new code values are added.
+>
+> In short: BON governs the *meaning and rules* of a code field. The reference table holds the *values*. The agent uses both: BON for business rules, JOIN for lookups.
 
 ---
 
@@ -253,9 +263,11 @@ SAP Sales domain:
 Relationships connect entities across and within domains. Tell the skill the source, target, and relationship type.
 
 > **Relationship type guidance (per skill best practices):**
-> - `RELATED_TO` is the general-purpose type — use when no other type fits precisely
+> - `RELATED_TO` — general-purpose, use when no other type fits precisely (e.g., Supplier → Material)
 > - `HAS_PART` — target is a structural component of source (Material has part BOM Item)
 > - `MEASURES` — source is a metric that quantifies target (Inspection measures Material)
+> - `DERIVES` — target is generated/computed from source (Purchase Order derives AP Line Item)
+> - Other supported types: `HAS_VARIANT`, `IDENTIFIED_BY`, `CLASSIFIES`, `APPLIES_TO`, `SCOPES`, `EQUIVALENT_TO`, `CUSTOM`
 > - Prefer specific types over `RELATED_TO` when the semantics are clear. The skill's quality gate (`R-00`) validates that only supported types are used.
 
 You can define all 8 relationships in a single prompt:
@@ -266,9 +278,9 @@ $business-ontology Define the following relationships:
 - Material has part BOM Item
 - Purchase Order is related to Supplier
 - Carrier is related to Shipment
-- Inspection is related to Material
-- Purchase Order is related to AP Line Item (cross-domain: Purchasing → Finance)
-- AP Line Item is related to Cost Posting (cross-domain: Finance)
+- Inspection measures Material
+- Purchase Order derives AP Line Item (cross-domain: Purchasing → Finance)
+- AP Line Item derives Cost Posting (cross-domain: Finance)
 - Sales Order is related to Material (cross-domain: Sales → Purchasing)
 ```
 
@@ -351,24 +363,24 @@ DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BASELINE_SV:
 - SAP Sales: Discount Leakage, Disruption Revenue Impact
 ```
 
-**Decoders → Columns** (1 prompt for all 7):
+**Code-Mapping Terms → Columns** (1 prompt for all 7):
 
 ```
-$business-ontology Associate all decoder terms with their source columns:
-- SAP Purchasing: KTOKK Account Group Decoder → column KTOKK in LFA1,
-  MATKL Material Group Decoder → column MATKL in MARA
-- SAP Finance: BSCHL Posting Key Decoder → column BSCHL in BSEG,
-  HKONT GL Account Decoder → column HKONT in BSEG,
-  OBJNR Cost Object Decoder → column OBJNR in COEP
-- SAP Sales: KSCHL Condition Type Decoder → column KSCHL in KONV,
-  VKORG Sales Org Decoder → column VKORG in VBAP
+$business-ontology Associate all code-mapping terms with their source columns:
+- SAP Purchasing: KTOKK Account Group → column KTOKK in LFA1,
+  MATKL Material Group → column MATKL in MARA
+- SAP Finance: BSCHL Posting Key → column BSCHL in BSEG,
+  HKONT GL Account → column HKONT in BSEG,
+  OBJNR Cost Object → column OBJNR in COEP
+- SAP Sales: KSCHL Condition Type → column KSCHL in KONV,
+  VKORG Sales Org → column VKORG in VBAP
 All tables are in DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION
 ```
 
 <!-- VISUAL: Representations binding flowchart (see getting-started-business-ontology.html, DIAGRAM 4) -->
-<!-- Shows: 11 Entities → TABLE, 11 Metrics → SEMANTIC_VIEW, 7 Decoders → COLUMN -->
+<!-- Shows: 11 Entities → TABLE, 11 Metrics → SEMANTIC_VIEW, 7 Code-Mapping Terms → COLUMN -->
 
-> **What happens:** The skill calls `SYSTEM$CREATE_GLOSSARY_ASSOCIATION()` for each term, linking it to the physical object. Entities bind with `RELATED_TABLE` role, metrics with `RELATED_SEMANTIC_VIEW`, decoders with `RELATED_TABLE` (column refType).
+> **What happens:** The skill calls `SYSTEM$CREATE_GLOSSARY_ASSOCIATION()` for each term, linking it to the physical object. Entities bind with `RELATED_TABLE` role, metrics with `RELATED_SEMANTIC_VIEW`, code-mapping terms with `RELATED_TABLE` (column refType).
 
 > **With vs without representations:**
 > | Capability | Without | With |
@@ -377,7 +389,7 @@ All tables are in DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION
 > | Catalog shows term → table link | No | Yes |
 > | Lineage traces concept → object | No | Yes |
 > | "Which tables are governed?" | Can't answer | 11/15 tables linked |
-> | "If I drop LFA1, what concepts break?" | Can't answer | Supplier, Carrier, KTOKK Decoder |
+> | "If I drop LFA1, what concepts break?" | Can't answer | Supplier, Carrier, KTOKK Account Group |
 
 ---
 
@@ -396,7 +408,7 @@ Cortex Agent
       ↓  searches business_ontology tool (native glossary search)
       ↓
 Snowflake's built-in search index over all approved BON terms
-  → finds relevant definitions, formulas, decoders, relationships
+  → finds relevant definitions, formulas, code mappings, relationships
       ↓
 Agent reads formulas, writes SQL accordingly
       ↓  calls query_data tool
@@ -462,20 +474,20 @@ CREATE OR REPLACE AGENT MY_BON_AGENT
       business definitions from Business Ontology. When answering:
       - Show the governed formula from BON, then the query result from data.
       - If BON provides a formula, USE IT to guide your SQL generation.
-      - Pay attention to sign logic, code decoders, and cross-domain chains.
+      - Pay attention to sign logic, code mappings, and cross-domain chains.
       - Never invent a formula. If BON returns no formula, say so.
       - Always show your reasoning.
     orchestration: |
       CRITICAL WORKFLOW for every question:
 
       STEP 1: Call business_ontology FIRST to get governed definitions,
-      formulas, and decoders relevant to the question.
+      formulas, and code mappings relevant to the question.
 
       STEP 2: Use the BON context to understand what field codes mean
       and which formula applies.
 
       STEP 3: Call query_data to run the actual data query, using the
-      formula and decoder knowledge from BON.
+      formula and code-mapping knowledge from BON.
 
       If the question is purely about definitions (what does X mean?),
       answer from BON alone without querying data.
@@ -489,7 +501,7 @@ CREATE OR REPLACE AGENT MY_BON_AGENT
         name: business_ontology
         description: |
           Search Business Ontology for governed business terms, metrics,
-          entities, and decoders. Returns definitions, formulas, synonyms,
+          entities, and code-mapping terms. Returns definitions, formulas, synonyms,
           and domain context. Call this FIRST before any data query.
     - tool_spec:
         type: cortex_analyst_text_to_sql
@@ -637,13 +649,13 @@ The formula is **guidance for the LLM**, not executable code. The glossary store
 │                                                             │
 │  11 ENTITY nodes (no formula)                              │
 │  11 METRIC nodes (with formula — the key differentiator)   │
-│   7 TERM decoders (field code mappings)                    │
+│   7 TERM nodes (code-mapping terms for field codes)          │
 ├─────────────────────────────────────────────────────────────┤
 │                DELIVERY MECHANISM                           │
 │                                                             │
 │  Native snowscope_search with businessOntology corpus:     │
 │    • Agent searches glossary index per question             │
-│    • Returns relevant definitions, formulas, decoders       │
+│    • Returns relevant definitions, formulas, code mappings    │
 │    • No custom SP needed — Snowflake manages the index     │
 │    • Always current with approved terms                     │
 ├─────────────────────────────────────────────────────────────┤
@@ -665,7 +677,7 @@ The formula is **guidance for the LLM**, not executable code. The glossary store
 | Create domain | `$business-ontology Create a domain called <name>` |
 | Add entity | `$business-ontology Add an entity called <name> to <domain>. Description: <text>` |
 | Add metric | `$business-ontology Add a metric called <name> to <domain>. Formula: <sql>. Description: <text>` |
-| Add decoder | `$business-ontology Add a term called <name> to <domain>. Description: <code mappings>` |
+| Add code-mapping term | `$business-ontology Add a term called <name> to <domain>. Description: <code mappings>` |
 | Add relationship | `$business-ontology Define a relationship: <source> is related to <target>` |
 | Add HAS_PART | `$business-ontology Define a relationship: <parent> has part <child>` |
 | Add DERIVES | `$business-ontology Define a relationship: <derived> derives from <source>` |
@@ -677,7 +689,7 @@ The formula is **guidance for the LLM**, not executable code. The glossary store
 | Delete domain | `$business-ontology Delete the <domain> domain` |
 | Associate entity→table | `$business-ontology In the <domain> domain, associate the entity <name> with table <FQN>` |
 | Associate metric→SV | `$business-ontology In the <domain> domain, associate the metric <name> with semantic view <FQN>` |
-| Associate decoder→column | `$business-ontology In the <domain> domain, associate the term <name> with column <col> in table <FQN>` |
+| Associate term→column | `$business-ontology In the <domain> domain, associate the term <name> with column <col> in table <FQN>` |
 
 ---
 
@@ -774,7 +786,7 @@ and total procurement spend. We use SAP with coded fields like KTOKK and MATKL.
 ```
 
 **What it does:**
-- AI extracts entities, metrics, and decoders from your description
+- AI extracts entities, metrics, and code-mapping terms from your description
 - Proposes formulas based on the business rules you describe
 - Suggests relationships between concepts
 - Drafts everything — domain experts review and approve

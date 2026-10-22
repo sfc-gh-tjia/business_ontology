@@ -175,28 +175,28 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_BOM_Cost_Rollup>');
 
 -- ---------------------------------------------------------------------------
--- 1.3  SAP Decoders (TERM kind)
+-- 1.3  SAP Code-Mapping Terms (TERM kind)
 -- ---------------------------------------------------------------------------
 
--- Term 14: MATKL Material Group Decoder
+-- Term 14: MATKL Material Group
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Purchasing",
-  "name": "MATKL Material Group Decoder",
+  "name": "MATKL Material Group",
   "itemKind": "TERM",
   "description": "SAP material group codes: 043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials"
 }');
 -- >> Note the returned termId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_MATKL_Material_Group_Decoder>');
+-- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_MATKL_Material_Group>');
 
--- Term 15: KTOKK Account Group Decoder
+-- Term 15: KTOKK Account Group
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Purchasing",
-  "name": "KTOKK Account Group Decoder",
+  "name": "KTOKK Account Group",
   "itemKind": "TERM",
   "description": "SAP vendor account groups: ZSTR=Strategic partner, ZSTD=Standard vendor, ZPRB=Probationary (exclude from active counts)"
 }');
 -- >> Note the returned termId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_KTOKK_Account_Group_Decoder>');
+-- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_KTOKK_Account_Group>');
 
 
 -- =============================================================================
@@ -256,38 +256,38 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Product_Gross_Margin>');
 
 -- ---------------------------------------------------------------------------
--- 2.3  SAP Decoders (TERM kind)
+-- 2.3  SAP Code-Mapping Terms (TERM kind)
 -- ---------------------------------------------------------------------------
 
--- Term 20: BSCHL Posting Key Decoder
+-- Term 20: BSCHL Posting Key
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Finance",
-  "name": "BSCHL Posting Key Decoder",
+  "name": "BSCHL Posting Key",
   "itemKind": "TERM",
   "description": "SAP posting keys: 31=Vendor invoice (positive/add), 34=Credit memo (negative/SUBTRACT from totals)"
 }');
 -- >> Note the returned termId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_BSCHL_Posting_Key_Decoder>');
+-- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_BSCHL_Posting_Key>');
 
--- Term 21: HKONT GL Account Decoder
+-- Term 21: HKONT GL Account
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Finance",
-  "name": "HKONT GL Account Decoder",
+  "name": "HKONT GL Account",
   "itemKind": "TERM",
   "description": "SAP GL accounts: 0040100000=COGS Raw Materials, 0040200000=COGS Freight"
 }');
 -- >> Note the returned termId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_HKONT_GL_Account_Decoder>');
+-- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_HKONT_GL_Account>');
 
--- Term 22: OBJNR Cost Object Decoder
+-- Term 22: OBJNR Cost Object
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Finance",
-  "name": "OBJNR Cost Object Decoder",
+  "name": "OBJNR Cost Object",
   "itemKind": "TERM",
   "description": "SAP cost objects: KS-MFG-US=US Manufacturing, KS-MFG-EU=EU Manufacturing, KS-MFG-AP=AP Manufacturing, KS-LOG=Logistics, KS-QA=Quality Assurance"
 }');
 -- >> Note the returned termId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_OBJNR_Cost_Object_Decoder>');
+-- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_OBJNR_Cost_Object>');
 
 
 -- =============================================================================
@@ -359,28 +359,28 @@ SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
 -- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_Cost_Center_Total>');
 
 -- ---------------------------------------------------------------------------
--- 3.3  SAP Decoders (TERM kind)
+-- 3.3  SAP Code-Mapping Terms (TERM kind)
 -- ---------------------------------------------------------------------------
 
--- Term 28: KSCHL Condition Type Decoder
+-- Term 28: KSCHL Condition Type
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Sales",
-  "name": "KSCHL Condition Type Decoder",
+  "name": "KSCHL Condition Type",
   "itemKind": "TERM",
   "description": "SAP condition types: PR00=Base/list price, K007=Customer discount (include), KF00=Freight surcharge (EXCLUDE from discount calculations)"
 }');
 -- >> Note the returned termId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_KSCHL_Condition_Type_Decoder>');
+-- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_KSCHL_Condition_Type>');
 
--- Term 29: VKORG Sales Org Decoder
+-- Term 29: VKORG Sales Org
 SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{
   "domainName": "SAP Sales",
-  "name": "VKORG Sales Org Decoder",
+  "name": "VKORG Sales Org",
   "itemKind": "TERM",
   "description": "SAP sales organizations: 1000=Americas, 2000=EMEA, 3000=APAC"
 }');
 -- >> Note the returned termId. Then run:
--- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_VKORG_Sales_Org_Decoder>');
+-- SELECT SYSTEM$APPROVE_GLOSSARY_TERM('<termId_for_VKORG_Sales_Org>');
 
 
 -- =============================================================================
@@ -430,7 +430,7 @@ SELECT SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<termId_for_Sales_Order>', '<termId_f
 -- =============================================================================
 -- Summary:
 --   3 domains created:  SAP Purchasing, SAP Finance, SAP Sales
---   29 terms drafted:   11 ENTITY, 11 METRIC, 7 TERM (decoders)
+--   29 terms drafted:   11 ENTITY, 11 METRIC, 7 TERM (code mappings)
 --   8 relationships drafted (cross-domain where applicable)
 --
 -- Remember: Each DRAFT call returns an ID. Use that ID in the corresponding
