@@ -1,226 +1,194 @@
-# SAP Business Ontology Demo
+# SAP Business Ontology Demo (V2)
 
-A side-by-side evaluation of two Cortex Agents on a realistic SAP procurement dataset:
+A fair, repeatable test of what **Snowflake Business Ontology (BON)** adds on top of **well-built semantic views**. It uses a realistic SAP supply-chain dataset with three domains: Procurement, Finance & Controlling, and Sales & Distribution.
 
-- **Baseline Agent** — Semantic View only (tables, columns, joins, aggregations)
-- **BON Agent** — Semantic View + Business Ontology via native `snowscope_search` (formulas, code meanings, cross-domain relationships)
-
-**V1 result: Baseline 27% (3/11) vs BON 100% (11/11)**
-
-> **Read this V1 number with care.** V1 compares BON against a *bare* semantic view (tables and joins, no metrics, synonyms or instructions). That overstates the uplift, because much of it comes from context a well-built semantic view would also carry. **V2 (below) is the fair test:** it measures BON against strong, enriched semantic views, so any uplift left is what BON adds on top of good semantic view practice.
-
-The 8 questions Baseline fails all require business knowledge that doesn't fit in a semantic view — SAP code meanings, multi-step formulas, sign conventions, and cross-domain reasoning paths.
-
-## Prerequisites
-
-- Snowflake account with ACCOUNTADMIN (or role with CREATE DATABASE, CREATE AGENT, glossary privileges)
-- Business Ontology Private Preview feature flag enabled on your account
-- Node.js 18+ and Python 3.10+ (for the web app)
-
-## Setup
-
-### 0. Business Ontology CoCo Skill (optional, for authoring)
-
-The `business-ontology` CoCo skill provides natural-language commands to create and manage BON glossary domains, terms, and relationships. You can also create them directly in Snowsight or via SYSTEM$ SQL calls.
-
-If using CoCo:
-```bash
-# Search for "business-ontology" in the CoCo skill marketplace, or install manually:
-cp -r <path-to-skill>/business-ontology ~/.snowflake/cortex/skills/business-ontology
-```
-
-Once installed, you can use natural language in CoCo:
-- `"create a domain called SAP Finance"`
-- `"add a metric called COGS to SAP Finance"`
-- `"ARR derives from Contracted ARR"`
-- `"import ontology from our semantic views"`
-
-### 1. Snowflake Objects (run SQL scripts in order)
-
-```bash
-# In Snowsight or SnowSQL, run each script sequentially:
-sql/01_setup_database.sql        # Create database, schema, warehouse
-sql/02_create_sap_tables.sql     # 15 SAP tables with data (266 rows)
-sql/03_create_semantic_view.sql  # SAP_BASELINE_SV (14 tables, 12 relationships)
-sql/04_create_agents.sql         # SAP_BASELINE_AGENT + BON_SV_NATIVE_AGENT
-sql/05_create_bon_glossary.sql   # 3 domains, 29 terms, 8 relationships
-```
-
-> **Note:** The BON agent (`BON_SV_NATIVE_AGENT`) uses Snowflake's native `snowscope_search` with the `businessOntology` corpus — no custom stored procedure needed. The glossary terms (script 05) must be created and approved before the agent can search them.
-
-### 2. Web App
-
-```bash
-cd Demo/web
-
-# Backend (Flask API)
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-# Set your connection name (must match ~/.snowflake/config.toml)
-export SNOWFLAKE_CONNECTION_NAME=default
-python api_server.py             # Starts on http://localhost:5001
-
-# Frontend (Next.js) — in a separate terminal
-npm install
-npm run dev                      # Starts on http://localhost:3000
-```
-
-Open http://localhost:3000 in your browser.
-
-## Demo Walkthrough
-
-### Context Tab
-- **Source Tables**: 15 SAP tables, 266 rows across purchasing, finance, and sales
-- **Semantic View**: SAP_BASELINE_SV connecting 14 tables with 12 FK relationships
-- **Business Ontology**: 29 glossary terms — 11 entity relationships, 7 SAP code-mapping terms, 11 authoritative formulas
-- **Representations**: All 29 terms bound to physical objects (entities→tables, metrics→semantic view, code-mapping terms→columns)
-
-### Comparison Tab
-Select a question from the dropdown, click Ask, and compare both agents side by side. Recommended demo questions:
-
-| Question | Tier | Why BON wins |
-|----------|------|-------------|
-| Q1: How many suppliers? | A | Business rule: exclude ZPRB probationary (14 not 15) |
-| Q4: COGS for raw materials? | B | Sign convention: credit memos subtract ($1.29M not $1.35M) |
-| Q9: Cut procurement 15%? | C | Constrained optimization: protect BOM inputs of highest-revenue product |
-
-### Analysis Tab
-Full scorecard with detailed breakdown of why baseline fails and BON succeeds for each question.
-
-## Architecture
-
-```
-┌─────────────────────────┐     ┌──────────────────────┐
-│   Next.js Frontend      │────▶│  Flask API (:5001)   │
-│   localhost:3000        │     │  /api/agent           │
-│                         │     └──────────┬───────────┘
-│  Context | Demo | Analysis               │
-└─────────────────────────┘                ▼
-                              ┌──────────────────────┐
-                              │  Snowflake            │
-                              │  DATA_AGENT_RUN()     │
-                              │                       │
-                              │  SAP_BASELINE_AGENT   │
-                              │    └─ SAP_BASELINE_SV │
-                              │                       │
-                              │  BON_SV_NATIVE_AGENT  │
-                              │    ├─ SAP_BASELINE_SV │
-                              │    └─ snowscope_search│
-                              │       (businessOntology│
-                              │        corpus)         │
-                              └───────────────────────┘
-```
-
-## How the Native BON Agent Works
-
-Instead of a custom stored procedure that bulk-dumps all glossary terms, the native approach uses Snowflake's built-in `snowscope_search` tool with the `businessOntology` corpus:
-
-1. **Agent receives a question** — e.g., "What is COGS for raw materials?"
-2. **Searches BON index** — the `business_ontology` tool searches the glossary for relevant terms (COGS formula, material group code meanings, sign convention)
-3. **Applies business context** — uses the returned formulas and code meanings to construct the correct SQL
-4. **Queries data** — calls `query_sap` (Cortex Analyst) with business-informed SQL
-5. **Returns answer** — with both the governed formula and the data result
-
-This is more efficient than the SP approach because:
-- **Search-based**: Retrieves only relevant terms per question, not all 29
-- **No custom code**: No Python SP to maintain — BON glossary is the single source of truth
-- **Auto-indexed**: Glossary changes are reflected automatically
-
-## Key Insight
-
-SV teaches the agent *how to query* — tables, columns, joins.
-BON teaches the agent *what the answer means* — business formulas, code translations, domain relationships.
-Without BON, the agent writes correct SQL that produces wrong answers.
-
----
-
-## V2: How we measure BON uplift
-
-V2 rebuilds the demo in schema `SAP_BON_V2` so the comparison is fair. Two principles:
-
-- **Sense proposes, Ontology governs, SVs execute.** BON defines what a metric *means* and which implementation is canonical. Semantic views compute it.
-- **BON is not a replacement for a good SV.** Each team gets a well-built semantic view. The question is what BON adds on top.
-
-### Three arms, one variable
+Two Cortex Agents are compared. They are identical except for one tool:
 
 | Arm | Agent | Context |
 |---|---|---|
-| A | `BARE_AGENT` | 3 bare domain SVs (tables, joins, label comments) |
-| B | `ENRICHED_AGENT` | 3 enriched domain SVs (metrics, synonyms, code values, instructions, verified queries) |
-| C | `BON_AGENT` | the same 3 enriched SVs **+ native Business Ontology search** |
+| **B** | `ENRICHED_AGENT` | 3 enriched domain semantic views (metrics, synonyms, code values, instructions, verified queries) |
+| **C** | `BON_AGENT` | the same 3 semantic views **+ native Business Ontology search** (`snowscope_search`, `businessOntology` corpus) |
 
-**BON uplift = C − B.** Same model, budget, response instructions and tool descriptions. The only difference is the `business_ontology` tool and a two-step instruction: look up the governed definition, then query.
+The two agents share the model, budget (150 s / 40k tokens), response instructions and tool descriptions. **BON uplift = C − B.**
 
-Each team's SV is correct on its own terms, and the teams deliberately disagree, as real teams do:
+## Final result
+
+Run `20261023_072322_9764`: 196 agent calls, 0 errors.
+
+| Metric | B: Enriched SVs | C: + Business Ontology |
+|---|---|---|
+| **Accuracy (main set)** | 71/80 (89%) | **80/80 (100%)** |
+| Tier 1: business rules in one SV (control) | 100% | 100% |
+| Tier 2: conflicting definitions & company vocabulary | 84% | **100%** |
+| Tier 3: cross-domain reasoning | 96% | **100%** |
+| Tier 4: governed meaning | 73% | **100%** |
+| Questions right on every run | 70% | **100%** |
+| Hedged answers ("15 or 14") | 3% | **0%** |
+| Answer names the governed term and its SV metric | 0% | **100%** |
+| Median latency | 18.1 s | 19.4 s |
+
+How to read it:
+- **The control behaved as intended.** On Tier 1, the semantic views alone already get everything right, and they tie. That confirms the baseline is strong.
+- **The gains are concentrated.** B's 9 misses fall on 6 questions:
+
+  | Question | B's score |
+  |---|---|
+  | Q18: governed policy and where it is implemented | 0/3 |
+  | Q19: "Tier A" company vocabulary | 3/5 |
+  | Q17: governed definition | 2/3 |
+  | Q06, Q07: canonical choice between two valid metrics | 4/5 each |
+  | Q12: cross-domain ratio | 4/5 |
+
+  The paired comparison is 9 wins for BON to 0 losses (McNemar p ≈ 0.004). The misses cluster in a few contested questions, so don't read 89% → 100% as a general accuracy figure.
+- **BON's main value is consistency and traceability, not raw accuracy.** It removes run-to-run flips and hedging, and every answer cites the governed term. The extra cost is about 1.3 s of median latency.
+- **Cross-team consistency:**
+  - **Q06:** Finance and Sales team agents agreed 67% of the time without BON, and 100% with it.
+  - **Q09:** agreed 100% in both arms.
+  - **Q07:** excluded. The Finance agent has no Sales semantic view, so it can't answer, and the pair can never agree (a test-design flaw).
+
+## How the comparison is made fair
+
+- **Sense proposes, Ontology governs, SVs execute.** BON defines what a metric *means* and which implementation is canonical. Semantic views compute it.
+- **BON does not replace a good semantic view.** Each team's view is correct on its own terms, and the teams deliberately disagree, as real teams do:
 
 | Question | Purchasing SV | Finance / Sales SV | Governed answer (BON) |
 |---|---|---|---|
-| Supplier count | `vendor_record_count` = 15 | `active_supplier_count` = 14 | **Supplier Count = 14** (ZPRB excluded by policy) |
+| Supplier count | `vendor_record_count` = 15 | `active_supplier_count` = 14 | **Supplier Count = 14** (probationary vendors excluded by policy) |
 | Revenue | — | `gross_bookings` = 746,000 (synonym "revenue") | **Revenue = net_revenue = 711,915** |
 | On-time delivery | `carrier_otd_rate` = 90% | — | **On-Time Delivery Rate = 66.7%** |
 | Cost of an assembly | `avg_standard_price` (STPRS 520) | — | **BOM Cost Rollup = 286.60** |
 
-### What is in the ontology
+- **Repeat runs:** 5 for tiers 2–3, 3 for tiers 1 and 4. Agents vary from run to run, so a single run isn't enough.
+- **Grading:** done by `AI_COMPLETE` against ground truth. Hedged answers count as wrong.
+- **Questions were not tuned until BON won.** Duplicate traps were removed, and an abstain question (Q20, a metric that doesn't exist) checks that BON doesn't invent definitions.
 
-- **3 domains:** Procurement, Finance & Controlling, Sales & Distribution.
-- **39 nodes:** 13 ENTITY, 16 METRIC, 7 code-mapping TERM, 3 POLICY_CONCEPT.
-  - Canonical metrics and their scoped variants: Supplier Count → Vendor Record Count; Revenue → Gross Bookings; On-Time Delivery Rate → Carrier Reported On-Time Rate.
+## The 20 questions
+
+| Tier | Questions | What it tests |
+|---|---|---|
+| 1 Business rules in one SV | Q01–Q05 | Control. Enriched SVs should already handle these. |
+| 2 Conflicting definitions & company vocabulary | Q06–Q09, Q19 | Which of two valid SV metrics is official. What "Tier A supplier" means. |
+| 3 Cross-domain reasoning | Q10–Q14 | Margin, customer profit, break-even, revenue per supplier, safe spend cuts |
+| 4 Governed meaning | Q15–Q18, Q20 | Definitions, policies, where each is implemented, and refusing to define what isn't governed |
+
+Ground truth, including the defensible-but-wrong trap answer for each question, is in `sql/v2/02_benchmark_ground_truth.sql`.
+
+## What's in the ontology
+
+- **3 domains:** Procurement (19 nodes), Finance & Controlling (12), Sales & Distribution (9).
+- **40 nodes:** 13 ENTITY, 16 METRIC, 8 TERM, 3 policies.
+  - Canonical metrics and their look-alikes: Supplier Count vs Vendor Record Count; Revenue vs Gross Bookings; On-Time Delivery Rate vs Carrier Reported On-Time Rate.
   - Cross-domain metrics: Product Gross Margin, Customer Profit, Break-even Discount, Revenue at Risk.
+  - Company vocabulary: **Tier A Supplier** (IS_A Supplier; classified by Vendor Account Group).
   - One TERM per code field, each pointing at its reference table (T077K, T023T), never one node per code value.
-- **49 typed relationships:** HAS_VARIANT, DERIVES, MEASURES, CLASSIFIES, APPLIES_TO, HAS_PART, RELATED_TO.
+- **51 typed relationships:** MEASURES 13, DERIVES 13, CLASSIFIES 8, RELATED_TO 6, APPLIES_TO 4, HAS_PART 3, HAS_VARIANT 3, IS_A 1.
 - **43 representations:**
-  - IMPLEMENTS: canonical metric → the exact SV metric (field-level, including derived `net_revenue`).
-  - RELATED_SEMANTIC_VIEW: cross-SV metric → every contributing SV.
+  - IMPLEMENTS: canonical metric → the exact SV metric.
+  - RELATED_SEMANTIC_VIEW: cross-domain metric → each contributing SV.
   - REPRESENTS: entity → table.
   - DESCRIBES: code term → column.
   - REFERENCE_DATA: code term → code table.
 
-### 18 questions, 4 tiers, mapped to value pillars
+> The 3 policies use `itemKind: POLICY_CONCEPT`, which isn't in the public docs (they list TERM / METRIC / ENTITY only) and may change in preview.
 
-| Tier | Questions | Value pillar | Expected BON uplift |
-|---|---|---|---|
-| 1 Business rules in one SV | Q01–Q05 | baseline fairness | ~0: enriched SVs already handle these |
-| 2 Conflicting definitions | Q06–Q09 | V1 canonical choice | which of two valid SV metrics is official |
-| 3 Cross-SV reasoning | Q10–Q14 | V2 cross-domain | margin, profit, break-even, revenue at risk, safe spend cuts |
-| 4 Governed meaning | Q15–Q18 | V3 governed meaning | definition, policy, and where it is implemented |
+## Prerequisites
 
-The scorecard also reports:
-- **V4 consistency:** the Finance and Sales team agents answer the same question; do they agree?
-- **V6 stability:** the same answer across 3 runs.
-- **V7 cost:** latency and tool calls.
-- **V8 traceability:** the answer names the governed term and its implementing SV metric.
-- **Hedging:** two answers offered without committing to either. This is graded wrong.
+- A Snowflake account with Business Ontology enabled (Private Preview) and search indexing in your region.
+- A role that can create databases, semantic views and agents, and has ontology privileges. The demo used ACCOUNTADMIN.
+- Python 3.10+ and Node.js 18+ for the harness and web app.
+- Optional: Cortex Code. The `$business-ontology` skill is bundled, so no install is needed.
 
-Tier 1 is included on purpose: if BON showed large gains there, the baseline would be too weak.
+## Build and run
 
-### Run it
+### 1. Snowflake objects (`sql/v2/`, in order)
 
-```bash
-# Build (in order): sql/v2/01_schema_data.sql ... 07_agents.sql
-# 05 and 06 are the ontology; approve the 39 drafted terms with their termIds (scoped form).
-
-# Wait for the BON search index. Ontology edits can take up to 6 hours to become searchable.
-SNOWFLAKE_CONNECTION_NAME=<conn> python benchmark/run_benchmark.py --check-index
-
-# Full run: 18 questions x 3 arms x 3 runs + consistency pairs
-SNOWFLAKE_CONNECTION_NAME=<conn> python benchmark/run_benchmark.py
+```
+01_schema_data.sql             # SAP_BON_V2 schema, SAP tables and data
+02_benchmark_ground_truth.sql  # BENCHMARK_QUESTIONS, BENCHMARK_GROUND_TRUTH (20 questions)
+03_bare_svs.sql                # bare SVs (legacy arm; not used in the final comparison)
+04_enriched_svs.sql            # PURCHASING / FINANCE / SALES _ENRICHED_SV
+05_bon.sql                     # 3 domains, 40 nodes, 51 relationships (approve the drafts)
+06_representations.sql         # 43 representations
+07_agents.sql                  # ENRICHED_AGENT, BON_AGENT, plus Finance/Sales team agents
+08_live_scenarios.sql          # optional change-management scenarios
 ```
 
-The harness refuses to run until the index serves the new V2 nodes and has dropped the retired V1 nodes; otherwise it would measure stale content. Results go to `SAP_BON_V2.BENCHMARK_RESULTS` and `benchmark/scorecard_<run_id>.json`.
+### 2. Wait for the search index, then benchmark
 
-### Live scenarios (change management)
+Ontology edits can take **up to about 6 hours** to become searchable, and deleted terms can keep being served for longer.
 
-`sql/v2/08_live_scenarios.sql` covers what a one-off benchmark cannot:
+```bash
+cd Demo
+SNOWFLAKE_CONNECTION_NAME=<conn> python -u benchmark/run_benchmark.py --check-index
 
-- **S1 Change once:** a steward edits the Supplier Count definition. Every BON agent follows, with no SV or prompt edit.
-- **S2 Drafts are never served:** an unapproved definition is invisible to agents until approved.
-- **S3 SV rebuild:** a renamed SV metric breaks one IMPLEMENTS binding, which is detectable and fixable in one place.
+# Full run: 20 questions, arms B and C, 3 runs (5 for tiers 2–3), plus consistency pairs
+SNOWFLAKE_CONNECTION_NAME=<conn> python -u benchmark/run_benchmark.py --arms B,C --runs 3 --runs-hard 5
 
-### Known limits (Private Preview)
+# Resume an interrupted run (already-saved calls are skipped)
+SNOWFLAKE_CONNECTION_NAME=<conn> python -u benchmark/run_benchmark.py --resume <RUN_ID>
+```
 
-- Native BON search returns definitions, formulas and synonyms, **not representations**. The implementing SV metric reaches the agent only because each definition names it. A Cortex Sense context does ingest representations.
-- Search reflects ontology edits and grants after an index refresh, which can take up to 6 hours.
-- Search is account-wide across readable domains. Other projects' terms can appear, so the agent is told which domains to prefer.
-- Owners and stewards cannot be set through the API; stewardship is recorded in the domain descriptions.
+The harness refuses to run until the index serves the V2 nodes, including Tier A, unless you pass `--force`. Calls retry on transient connection errors. Results go to `SAP_BON_V2.BENCHMARK_RESULTS` and `benchmark/scorecard_<run_id>.json`.
+
+### 3. Web app
+
+```bash
+cd Demo/web
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env.local        # fill in your own connection details; never commit .env.local
+export SNOWFLAKE_CONNECTION_NAME=<conn>
+python api_server.py              # Flask API on http://localhost:5001
+
+npm install && npm run dev        # Next.js on http://localhost:3000
+```
+
+## Demo walkthrough
+
+- **Context tab:**
+  - **What semantic views can't settle on their own.** Three tables, each showing the risk with semantic views alone next to what BON adds:
+    - which metric is canonical;
+    - cross-domain metrics;
+    - governed meaning.
+  - **The rest of the tab:**
+    - the semantic view diagram;
+    - the ontology graph (40 nodes / 51 relationships / 43 representations);
+    - the source tables.
+- **Comparison tab:** ask a question and see the Enriched agent and the BON agent side by side. The 9 curated questions are 3 per tier, and for tiers 2–4 only questions where BON measurably beat the semantic views:
+  - Tier 1: Q01, Q03, Q04
+  - Tier 2: Q06, Q07, Q19
+  - Tier 3: Q12
+  - Tier 4: Q17, Q18
+- **Analysis tab:** tier scores across all 20 questions from the latest run, plus a per-question table for the curated questions.
+
+```
+Next.js (:3000) ──▶ Flask API (:5001) ──▶ DATA_AGENT_RUN()
+                                           ├─ ENRICHED_AGENT ─ 3 enriched SVs
+                                           └─ BON_AGENT ────── 3 enriched SVs + business_ontology (snowscope_search)
+```
+
+## Live scenarios (change management)
+
+`sql/v2/08_live_scenarios.sql` covers what a one-off benchmark can't:
+
+- **S1 Change once:** a steward edits the Supplier Count definition. Every BON agent follows it, with no change to any semantic view or prompt.
+- **S2 Drafts are never served:** an unapproved definition stays invisible to agents until it is approved.
+- **S3 Semantic view rebuild:** renaming a semantic view metric breaks one IMPLEMENTS representation. The break is detectable and fixable in one place.
+
+## Known limits (Private Preview)
+
+- **Search results:**
+  - Native BON search returns definitions, formulas and synonyms. It does **not** return relationships or representations.
+  - Any link the agent must follow, such as the SV metric that implements a term or a cross-domain bridge, must also be written in the definition text.
+- **Index freshness:** search reflects ontology edits and grants only after an index refresh. That can take up to about 6 hours, and deletions take longer to disappear.
+- **Search scope:** search covers every domain your role can read across the account. Other projects' terms can appear, so the agent is told which domains to prefer.
+- **Not yet available through the API:**
+  - You can't set owners and stewards through the API, so stewardship is recorded in the domain descriptions.
+  - Representations aren't revalidated when a semantic view changes.
+- **The benchmark itself:**
+  - It is small: 20 questions on one synthetic dataset.
+  - Measure on your own contested questions before generalising.
+
+## Legacy V1
+
+`sql/01`–`05` are the original V1 build. V1 compared BON against a single *bare* semantic view and reported 27% vs 100%. That overstates the uplift, because a well-built semantic view would also supply much of the missing context. Use V2 for any claim about BON's value.
