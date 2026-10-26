@@ -1,7 +1,7 @@
 """BON Demo V2 benchmark harness.
 
 Measures Business Ontology uplift as arm C (enriched SVs + BON) minus arm B
-(enriched SVs alone), with arm A (bare SVs) as the floor. Same model, budget,
+(enriched SVs alone). Same model, budget,
 instructions, and SVs across B and C: the only difference is the BON tool.
 
 Value scorecard (maps to Business Ontology positioning):
@@ -31,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import snowflake.connector
 
 SCHEMA = "DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2"
-ARMS = {"A": "BARE_AGENT", "B": "ENRICHED_AGENT", "C": "BON_AGENT"}
+ARMS = {"B": "ENRICHED_AGENT", "C": "BON_AGENT"}
 PAIRS = {  # V4: same question asked through two teams' agents
     "no_bon": ("FINANCE_AGENT", "SALES_AGENT"),
     "bon": ("FINANCE_BON_AGENT", "SALES_BON_AGENT"),
@@ -40,7 +40,8 @@ PAIR_QIDS = ["Q06", "Q07", "Q09"]
 JUDGE_MODEL = "claude-sonnet-4-5"
 # Index check: new V2 node that must be searchable, and retired V1 nodes that must not be.
 INDEX_PROBES = [("supplier count active suppliers", "Procurement.Supplier Count"),
-                ("revenue net of discounts", "Sales & Distribution.Revenue")]
+                ("revenue net of discounts", "Sales & Distribution.Revenue"),
+                ("tier a suppliers", "Procurement.Tier A Supplier")]
 RETIRED_DOMAINS = ("SAP Purchasing.", "SAP Finance.", "SAP Sales.")
 
 
@@ -172,13 +173,23 @@ def save(conn, run_id, rows):
     cur.close()
 
 
-def task(experiment, arm, agent, gt, run_no):
-    conn = connect()
-    try:
-        res = run_agent(conn, agent, gt["QUESTION"])
-        v = judge(conn, gt, res["answer"])
-    finally:
-        conn.close()
+def task(experiment, arm, agent, gt, run_no, attempts=3):
+    # Retry the whole call: transient connection errors (e.g. 390422 IP blocks) otherwise abort the run.
+    for i in range(attempts):
+        conn = None
+        try:
+            conn = connect()
+            res = run_agent(conn, agent, gt["QUESTION"])
+            v = judge(conn, gt, res["answer"])
+            break
+        except snowflake.connector.errors.Error as e:
+            if i == attempts - 1:
+                raise
+            print(f"  retry {i + 1} {experiment} {arm} {gt['QID']} run{run_no}: {str(e)[:80]}")
+            time.sleep(30 * (i + 1))
+        finally:
+            if conn:
+                conn.close()
     try:
         hv = float(v.get("headline_value")) if v.get("headline_value") is not None else None
     except (TypeError, ValueError):
@@ -223,9 +234,9 @@ def print_scorecard(sc):
     pillars = {}
     for r in sc["accuracy"]:
         pillars.setdefault(r["VALUE_PILLAR"], {})[r["ARM"]] = int(r["PCT"])
-    print("\nACCURACY BY VALUE PILLAR (% correct)       A bare  B enriched  C +BON  BON uplift (C-B)")
+    print("\nACCURACY BY VALUE PILLAR (% correct)       B enriched  C +BON  BON uplift (C-B)")
     for p, a in sorted(pillars.items()):
-        print(f"  {p:<28} {a.get('A',0):>10}% {a.get('B',0):>10}% {a.get('C',0):>6}%   {a.get('C',0)-a.get('B',0):+d} pts")
+        print(f"  {p:<28} {a.get('B',0):>10}% {a.get('C',0):>6}%   {a.get('C',0)-a.get('B',0):+d} pts")
     print("\nSTABILITY (V6)              same answer every run   always right")
     for r in sc["stability"]:
         print(f"  arm {r['ARM']}  {int(r['STABLE_PCT']):>28}% {int(r['ALWAYS_RIGHT_PCT']):>14}%")
@@ -240,13 +251,15 @@ def print_scorecard(sc):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--runs", type=int, default=3)
+    ap.add_argument("--runs", type=int, default=3, help="runs per question for tiers 1 and 4")
+    ap.add_argument("--runs-hard", type=int, default=5, help="runs per question for tiers 2 and 3, where BON uplift is expected")
     ap.add_argument("--qids", default="")
-    ap.add_argument("--arms", default="A,B,C")
+    ap.add_argument("--arms", default="B,C")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--skip-consistency", action="store_true")
     ap.add_argument("--check-index", action="store_true", help="only report whether the BON search index is ready")
     ap.add_argument("--force", action="store_true", help="run even if the BON index is not ready")
+    ap.add_argument("--resume", default="", help="existing RUN_ID: run only the calls not yet saved for it")
     a = ap.parse_args()
 
     ready, report = check_index()
@@ -261,12 +274,20 @@ def main():
     conn = connect()
     ensure_results_table(conn)
     qs = load_questions(conn, set(filter(None, a.qids.split(","))))
-    run_id = time.strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:4]
-    jobs = [("main", arm, ARMS[arm], gt, n) for gt in qs for arm in a.arms.split(",") for n in range(1, a.runs + 1)]
+    run_id = a.resume or (time.strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:4])
+    runs_for = lambda gt: a.runs_hard if int(gt["TIER"]) in (2, 3) else a.runs
+    jobs = [("main", arm, ARMS[arm], gt, n) for gt in qs for arm in a.arms.split(",") for n in range(1, runs_for(gt) + 1)]
     if not a.skip_consistency:
         gts = {g["QID"]: g for g in load_questions(conn, set(PAIR_QIDS))}
         jobs += [("consistency", label, agent, gts[q], n) for label, agents in PAIRS.items()
                  for agent in agents for q in PAIR_QIDS for n in range(1, a.runs + 1)]
+    if a.resume:
+        cur = conn.cursor()
+        cur.execute(f"SELECT EXPERIMENT, ARM, AGENT, QID, RUN_NO FROM {SCHEMA}.BENCHMARK_RESULTS WHERE RUN_ID = %s", (run_id,))
+        saved = {tuple(r) for r in cur.fetchall()}
+        cur.close()
+        jobs = [j for j in jobs if (j[0], j[1], j[2], j[3]["QID"], j[4]) not in saved]
+        print(f"resuming {run_id}: {len(saved)} calls already saved")
     print(f"run_id={run_id}: {len(jobs)} agent calls, {a.workers} parallel")
 
     rows, done = [], 0

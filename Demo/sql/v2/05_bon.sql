@@ -121,3 +121,9 @@ SELECT SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('Procurement.Probationary Vendor Excl
 SELECT SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('Finance & Controlling.Credit Memo Sign Rule','Finance & Controlling.COGS Raw Materials','APPLIES_TO');
 SELECT SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('Finance & Controlling.Credit Memo Sign Rule','Finance & Controlling.COGS Freight','APPLIES_TO');
 SELECT SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('Procurement.BOM Input Protection','Procurement.Procurement Spend','APPLIES_TO');
+
+-- ---------------------------------------------------------------- Added for benchmark Q19 (company vocabulary)
+SELECT SYSTEM$DRAFT_GLOSSARY_TERM('{"name":"Tier A Supplier","domainName":"Procurement","itemKind":"TERM","synonyms":["Tier A suppliers","Tier A vendor","Tier-A supplier"],"description":"Company term for our top supplier tier: a supplier in vendor account group ZSTR (strategic partner). Tier A does not include standard (ZSTD) or probationary (ZPRB) vendors. Spend with Tier A suppliers = Procurement Spend (PURCHASING_ENRICHED_SV purchase_orders.procurement_spend) filtered to vendors.account_group = ZSTR."}');
+-- SELECT SYSTEM$APPROVE_ALL_GLOSSARY_TERMS('["<termId>"]');
+SELECT SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('Procurement.Vendor Account Group','Procurement.Tier A Supplier','CLASSIFIES');
+SELECT SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('Procurement.Tier A Supplier','Procurement.Supplier','IS_A');

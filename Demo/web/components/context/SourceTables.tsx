@@ -42,6 +42,13 @@ const TABLE_GROUPS = [
       { name: "KONV", rows: 25, desc: "Pricing conditions — KSCHL (PR00/K007/KF00)" },
     ],
   },
+  {
+    label: "Reference Data",
+    tables: [
+      { name: "T077K", rows: 3, desc: "Vendor account groups — EXCLUDE_FROM_ACTIVE_COUNT flag (ZPRB)" },
+      { name: "T023T", rows: 6, desc: "Material group texts — 043 Electronics ... 048 Assembly" },
+    ],
+  },
 ];
 
 export default function SourceTables() {
@@ -51,23 +58,22 @@ export default function SourceTables() {
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold">SAP Production Data</h3>
+        <h3 className="text-lg font-semibold">SAP Data (schema SAP_BON_V2)</h3>
         <div className="flex gap-4 text-sm text-[var(--text-muted)]">
           <span><strong className="text-[var(--text)]">{totalTables}</strong> tables</span>
           <span><strong className="text-[var(--text)]">{totalRows}</strong> rows</span>
-          <span><strong className="text-[var(--text)]">3</strong> domains (Purchasing, Finance, Sales)</span>
+          <span><strong className="text-[var(--text)]">3</strong> domains (Procurement, Finance, Sales)</span>
         </div>
       </div>
 
       <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 mb-5 text-sm">
-        <strong>Key challenge:</strong> Three SAP domains (MM, FI/CO, SD) with coded field names.
-        Cross-domain connections are implicit — no FK links Sales Orders to Purchase Orders (the chain goes through BOM).
-        Finance posting keys encode sign logic (BSCHL=31 positive, 34 negative).
-        Multiple plausible metrics exist (OTD: OTRAT vs WADAT/LFDAT; Spend: EKPO.NETWR vs LFB1.JWERT).
-        Without business ontology, the agent cannot decode these or traverse cross-domain chains.
+        <strong>Key challenge:</strong> Three SAP domains (MM, FI/CO, SD), each served by its own team&apos;s semantic view.
+        The views are individually correct but disagree on shared words (supplier count, revenue, on-time delivery, unit cost),
+        and cross-domain questions (margin, profit, revenue at risk) need meaning from more than one view.
+        Code-table meanings live in reference data (T077K, T023T), not in column names.
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {TABLE_GROUPS.map((group) => (
           <div key={group.label}>
             <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">

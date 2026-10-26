@@ -1,25 +1,35 @@
 # Getting Started with Business Ontology
 
-> **Private Preview** — Business Ontology must be enabled on your Snowflake account. In Snowsight, go to **Catalog > Business Ontology** to check. Contact your Snowflake account team to enable.
+> **Private Preview.** Business Ontology must be enabled on your Snowflake account. In Snowsight, check **Catalog > Business Ontology (Preview)**. Contact your Snowflake account team to enable it. Behaviour, APIs and node kinds may change before general availability.
+
+This guide walks through the build used in the SAP supply-chain demo (V2): three domain semantic views plus a Business Ontology (BON) that tells the agent what the business means. Every step has a `$business-ontology` CoCo prompt and the SQL the skill runs underneath.
 
 ---
 
 ## What is Business Ontology?
 
-Business Ontology is Snowflake's governed vocabulary layer. It lets you define what business concepts mean — metrics, entities, code-mapping terms, formulas — and how they relate to each other. Once defined, Cortex Agents use this knowledge to answer questions that require understanding beyond raw table schemas.
+Business Ontology is the governed meaning layer in Horizon Catalog. It models shared business meaning as a connected graph of **terms, metrics and entities**, organised into **domains**, linked by **typed relationships**, and tied to the Snowflake objects that implement them through **representations**. Only approved items are visible to agents.
 
-**The core problem it solves:** A Semantic View teaches an agent *how to query* (tables, columns, joins). Business Ontology teaches it *what the answer means* (which vendors count as "canonical", how to handle credit memos, what formula to use for COGS).
+**Semantic Views tell Snowflake *how* to compute a metric. Business Ontology tells everyone *what* that metric means, *which* one is canonical, *who* approved it, and *whether* teams agree.**
 
-<!-- VISUAL: SV vs BON comparison cards (see getting-started-business-ontology.html, DIAGRAM 1) -->
+| Layer | Owns | Example from the demo |
+|---|---|---|
+| Semantic View | Tables, joins, dimensions, metric SQL; executes the number | `PURCHASING_ENRICHED_SV` has both `VENDOR_RECORD_COUNT` (15) and `ACTIVE_SUPPLIER_COUNT` (14) |
+| Business Ontology | Which metric is canonical, business vocabulary, policies, cross-domain links | "Supplier Count" means active suppliers; *Probationary Vendor Exclusion* applies to it; it is implemented by `ACTIVE_SUPPLIER_COUNT` |
+
+<!-- VISUAL 1: SV-alone vs SV+BON comparison cards (getting-started-business-ontology.html, #what — .compare-grid) -->
 
 ```
-Semantic View alone                 Semantic View + Business Ontology
-─────────────────────               ─────────────────────────────────
-"How many suppliers?"               "How many suppliers?"
-→ COUNT(*) FROM LFA1 = 15           → COUNT(DISTINCT LIFNR) FROM LFA1
-  (wrong — includes probationary)     WHERE KTOKK IN ('ZSTR','ZSTD') = 14
-                                      (correct — excludes probationary per policy)
+Semantic views alone                     Semantic views + Business Ontology
+────────────────────                     ──────────────────────────────────
+"How many suppliers do we have?"          "How many suppliers do we have?"
+Two defensible metrics exist.             BON: Supplier Count = active suppliers,
+Agent picks one — or hedges.              policy excludes probationary vendors,
+→ 15 (vendor records) or "15 or 14"       implemented by ACTIVE_SUPPLIER_COUNT.
+                                          → 14, with the governed term cited
 ```
+
+The SV still computes the number. BON makes the agent pick the right one and say why.
 
 ---
 
@@ -27,795 +37,488 @@ Semantic View alone                 Semantic View + Business Ontology
 
 | Requirement | Details |
 |---|---|
-| **Snowflake account** | Business Ontology feature flag enabled (Private Preview) |
-| **Snowsight access** | Navigate to Catalog > Business Ontology |
-| **Role** | ACCOUNTADMIN (or role with glossary API access) |
-| **Your data** | Tables already loaded in Snowflake |
-| **CoCo (optional)** | Cortex Code Desktop/CLI — for bulk import, AI extraction, and advanced skill workflows |
+| Account | Business Ontology enabled (Private Preview); search indexing enabled in your region |
+| Snowsight | **Catalog > Business Ontology (Preview)** |
+| Role | A role with ontology privileges. Domains use READ / SUGGEST / MODIFY / OWNERSHIP. The demo used ACCOUNTADMIN. |
+| Data | Tables loaded, and ideally semantic views already built |
+| CoCo | Cortex Code Desktop or CLI. The `$business-ontology` skill is bundled, so no install is needed. |
 
-### Getting Started in Snowsight
-
-In Snowsight, go to **Catalog > Business Ontology (Preview)**. Click **Generate Ontology** to create your first domain and start adding terms interactively.
-
-<!-- SCREENSHOT: Snowsight Catalog > Business Ontology landing page with "Generate Ontology" button -->
-<!-- TODO: Replace this placeholder with actual screenshot -->
-![Snowsight Business Ontology UI](screenshots/snowsight-bon-landing.png)
-
-### CoCo Skill (optional — for power users)
-
-For bulk import, AI-assisted extraction from files/SVs/dbt, and conversational authoring, install the `$business-ontology` CoCo skill:
-
-```
-/find-skill business-ontology
-```
-
-If not available in the catalog, obtain the folder from your Snowflake account team and copy to `~/.snowflake/cortex/skills/business-ontology/`.
+**Snowsight:** **Catalog > Business Ontology (Preview) > Generate Ontology** creates a domain and lets you add terms interactively. Use CoCo for bulk work, importing from semantic views, and agent setup.
 
 ---
 
 ## What You'll Build
 
-<!-- VISUAL: Stat cards grid (see getting-started-business-ontology.html, "What You'll Build" section) -->
-<!-- 3 Domains | 11 Entities | 11 Metrics | 7 Code-Mapping Terms | 8 Relationships | 29 Representations -->
+<!-- VISUAL 2: Stat cards — 3 Domains | 13 Entities | 16 Metrics | 8 Terms | 3 Policies | 51 Relationships | 43 Representations | 3+2 SVs+agents (html #build — .stat-row) -->
 
-By the end of this guide you will have:
-
-| Object | Count | Purpose |
+| Object | Count | Notes |
 |---|---|---|
-| **Domains** | 3 | Group concepts by business area |
-| **Entity nodes** | 11 | Business objects (Supplier, Material, PO, etc.) |
-| **Metric nodes** | 11 | Formulas with business rules (COGS, OTD, Risk, etc.) |
-| **Code-mapping terms** | 7 | SAP field code mappings (MATKL, BSCHL, HKONT, etc.) — `itemKind: TERM` |
-| **Relationships** | 8 | Cross-domain connections (Supplier→Material, PO→AP, etc.) |
-| **Representations** | 29 | Bind terms to physical Snowflake objects (optional for agent, recommended for governance) |
-| **Cortex Agent** | 1 | Uses native BON search + Semantic View to answer questions |
+| Domains | 3 | Procurement · Finance & Controlling · Sales & Distribution |
+| Entities | 13 | Supplier, Material, Assembly, Bill of Materials, Purchase Order, Shipment, Carrier, Inspection Lot, AP Line Item, Cost Posting, Sales Order, Customer, Pricing Condition |
+| Metrics | 16 | Canonical metrics, their look-alikes (e.g. *Vendor Record Count*, *Carrier Reported On-Time Rate*, *Gross Bookings*), and cross-domain metrics (*Product Gross Margin*, *Customer Profit*, *Revenue at Risk*) |
+| Terms | 8 | Code fields and company vocabulary: Vendor Account Group, Material Group, Posting Key, GL Account, Cost Object, Condition Type, Sales Organization, **Tier A Supplier** |
+| Policies | 3 | Probationary Vendor Exclusion, Credit Memo Sign Rule, BOM Input Protection |
+| Relationships | 51 | MEASURES 13 · DERIVES 13 · CLASSIFIES 8 · RELATED_TO 6 · APPLIES_TO 4 · HAS_PART 3 · HAS_VARIANT 3 · IS_A 1 |
+| Representations | 43 | IMPLEMENTS (metric → SV metric), RELATED_SEMANTIC_VIEW, REPRESENTS (entity → table), DESCRIBES (term → column), REFERENCE_DATA (term → code table) |
+| Semantic views | 3 | `PURCHASING_ENRICHED_SV`, `FINANCE_ENRICHED_SV`, `SALES_ENRICHED_SV` |
+| Agents | 2 | `ENRICHED_AGENT` (SVs only) and `BON_AGENT` (same SVs + ontology search) for A/B testing |
+
+All objects live in `DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2`. The SQL is in `demo/sql/v2/01`–`07`.
+
+> **Policies:** the demo stores policies as `itemKind: POLICY_CONCEPT`. The public docs currently document only `TERM`, `METRIC` and `ENTITY`, and the other kinds are not guaranteed to be stable in preview. If you need to stay on documented kinds, model a policy as a `TERM` named "... Policy" and link it with `APPLIES_TO`.
+
+---
+
+## The Golden Rule: What Goes Where
+
+| Put it in the **Semantic View** | Put it in **Business Ontology** |
+|---|---|
+| Table joins, dimensions, facts | Which of several metrics is the canonical one |
+| Metric SQL, including filters and sign logic (`ACTIVE_SUPPLIER_COUNT`, `COGS_RAW_MATERIALS` with credit memos subtracted) | Business vocabulary the data doesn't name ("Tier A supplier", "gross bookings is not revenue") |
+| Synonyms that only help text-to-SQL | Policies that constrain how metrics are used (exclusions, sign rules, what must not be cut) |
+| Verified queries | Cross-domain chains (Sales → BOM → Procurement cost) and who approved each definition |
+
+**Don't** create one ontology metric for every SV metric. Create ontology nodes where meaning is contested, company-specific or cross-domain. The SV computes; BON decides and explains.
 
 ---
 
 ## End-to-End Process
 
-<!-- VISUAL: 7-phase workflow flowchart (see getting-started-business-ontology.html, DIAGRAM 2) -->
-<!-- Phase 1 → Phase 2 → Phase 3 (key differentiator) → Phase 4 → Phase 5 → Phase 6 → Phase 7 (optional) -->
+<!-- VISUAL 3: 10-phase process flowchart with bootstrap entry (html #process — Mermaid) -->
+
+```mermaid
+flowchart LR
+  P1["1 Domains"] --> P2["2 Entities"] --> P3["3 Metrics + look-alikes"]:::key --> P4["4 Terms + policies"]:::key --> P5["5 Relationships"]
+  P5 --> P6["6 Approve + verify"] --> P7["7 Representations"] --> P8["8 Index check"]:::wait --> P9["9 Agent"] --> P10["10 Evaluate A/B"]:::key
+  SV["Existing semantic views"]:::src -. bootstrap .-> P2
+  classDef key fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef wait fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef src fill:#f0fdf4,stroke:#16a34a,color:#0f172a
+```
+
+*Blue phases carry most of the value. Indexing (amber) can take up to about 6 hours.*
+
+If you already have semantic views, start with **[Bootstrap from Semantic Views](#bootstrap-from-existing-semantic-views)** and use phases 2–5 to fill the gaps the import can't infer.
 
 ### Phase 1: Create Domains
 
-Domains group related business concepts. One domain per business area.
-
-Open CoCo and type this prompt. The `$business-ontology` prefix ensures the skill is invoked:
-
 ```
-$business-ontology Create three domains: SAP Purchasing, SAP Finance, SAP Sales
+$business-ontology Create three domains: Procurement, Finance & Controlling, Sales & Distribution.
+Describe each one's scope and its accountable business owner.
 ```
 
-> **What happens behind the scenes:** The skill calls `SYSTEM$CREATE_GLOSSARY_DOMAIN()` for each domain. No draft/approve needed for domains — they're created immediately.
+Underneath: `SYSTEM$CREATE_GLOSSARY_DOMAIN('Procurement')`. Domains are created immediately and don't need approval. The API can't set owners and stewards yet, so record stewardship in the domain description. Domains can't be renamed yet, so choose names carefully.
 
----
+### Phase 2: Add Entities
 
-### Phase 2: Add Entity Nodes
-
-Entities are business objects — things that exist and can be counted or listed. They have descriptions but no formulas. Give the skill the entity name, domain, and a description that includes key field mappings.
+Entities are the business objects that metrics measure. Describe them in business language, and name the key that identifies them.
 
 ```
-$business-ontology Add the following entities:
-
-SAP Purchasing domain:
-1. Supplier — Vendor master (LFA1). 15 vendors with LIFNR vendor number.
-   KTOKK account group: ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary.
-   Exclude ZPRB from canonical counts.
-2. Material — Material master (MARA). MATKL material group codes:
-   043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials.
-   STPRS is standard price in USD.
-3. Purchase Order — Purchasing document item (EKPO). STATU status codes:
-   O=Open, C=Closed, R=Received. NETWR=net value USD, MENGE=quantity.
-4. Shipment — Delivery/shipment (LIKP). Compare WADAT (actual delivery) vs
-   LFDAT (expected delivery) for operational OTD. Do NOT use LFA2.OTRAT
-   which is carrier self-reported and unreliable.
-5. Carrier — Forwarding agent (LFA2). VSART shipping type:
-   01=Ocean, 02=FTL, 03=Air, 04=Intermodal, 05=LTL.
-   OTRAT is self-reported OTD — unreliable, do not use for real OTD calculation.
-6. Inspection — Quality inspection lot (QALS). VCODE result:
-   A=Accepted, R=Rejected, C=Conditional. QAESSION = defect rate percentage.
-7. BOM Item — Bill of Materials component (STPO). STLNR=parent assembly,
-   IDNRK=child component, MENGE=quantity per assembly.
-   4-level recursive hierarchy enables cost rollup.
-
-SAP Finance domain:
-8. AP Line Item — Accounting document line (BSEG). BSCHL posting key:
-   31=Invoice (positive, add to totals), 34=Credit memo (negative, SUBTRACT).
-   HKONT=GL account. DMBTR=amount in local currency.
-9. Cost Posting — Cost element posting (COEP). OBJNR cost object codes:
-   KS-MFG-US=US Manufacturing, KS-MFG-EU=EU Manufacturing,
-   KS-MFG-AP=APAC Manufacturing, KS-LOG=Logistics, KS-QA=Quality.
-   KSTAR=cost element, WRTBTR=amount.
-
-SAP Sales domain:
-10. Sales Order — Sales document item (VBAP). VKORG sales org:
-    1000=Americas, 2000=EMEA, 3000=APAC. NETWR=net value, KWMENG=quantity.
-    KUNNR=customer number.
-11. Pricing Condition — Pricing condition record (KONV). KSCHL condition type:
-    PR00=Base price, K007=Customer discount (REDUCES revenue, KWERT is negative),
-    KF00=Freight surcharge (ADDS to revenue, KWERT is positive).
+$business-ontology Add these entities to Procurement:
+- Supplier: an active vendor we purchase from, identified by vendor number (LFA1.LIFNR).
+  Vendors in a probationary account group are vendor records but not suppliers.
+- Material, Assembly, Bill of Materials, Purchase Order, Shipment, Carrier, Inspection Lot
+Add AP Line Item and Cost Posting to Finance & Controlling.
+Add Sales Order, Customer and Pricing Condition to Sales & Distribution.
 ```
 
-> **What happens:** For each entity, the skill calls `SYSTEM$DRAFT_GLOSSARY_TERM({...})` with `itemKind: "ENTITY"`, shows you the draft, then calls `SYSTEM$APPROVE_GLOSSARY_TERM(termId)` when you confirm.
+Underneath: `SYSTEM$DRAFT_GLOSSARY_TERM('{"name":"Supplier","domainName":"Procurement","itemKind":"ENTITY","description":"..."}')`. The skill shows each draft before it writes it.
 
----
+### Phase 3: Add Metrics: Canonical Metrics and Their Look-alikes
 
-### Phase 3: Add Metric Nodes (with Formulas)
-
-Metrics include a `formula` field — this is where you encode the business logic that a Semantic View cannot express. Give the skill the metric name, domain, formula, and a description that explains the business rule.
+This is where most of the value comes from. For each metric, write down which number is canonical, and **also add the defensible-but-wrong look-alike** as its own node that says it is not the canonical one. That gives the agent something to tell apart.
 
 ```
-$business-ontology Add the following metrics with formulas:
-
-SAP Purchasing domain:
-1. Canonical Supplier Count
-   Formula: COUNT(DISTINCT LIFNR) FROM LFA1 WHERE KTOKK IN ('ZSTR','ZSTD')
-   Description: Excludes ZPRB probationary vendors per business policy. Answer is 14, not 15.
-
-2. Operational OTD Rate
-   Formula: COUNT(CASE WHEN WADAT <= LFDAT THEN 1 END) / COUNT(*) FROM LIKP WHERE STATU='D'
-   Description: Real delivery on-time rate from actual vs expected dates.
-   WARNING: Do NOT use LFA2.OTRAT — that is carrier self-reported (~90%) and unreliable.
-   Real OTD is approximately 66.7%.
-
-3. Total Procurement Spend
-   Formula: SUM(NETWR) FROM EKPO
-   Description: Use EKPO.NETWR (PO line values) only.
-   NOT LFB1.JWERT — those are annual contract values which are much larger.
-
-4. Weighted Supply Risk Score
-   Formula: 0.4 * single_source_flag + 0.3 * defect_rate + 0.3 * delivery_failure_rate
-   Description: Fixed business policy weights — DO NOT change.
-   Highest risk material is MAT-006 at 0.70.
-
-5. Supplier Disruption Cascade
-   Formula: Recursive chain: Supplier -> EKPO(materials) -> STPO(recursive BOM upward) -> affected assemblies
-   Description: Traces which assemblies are affected when a supplier is disrupted.
-   Uses recursive CTE on STPO traversing upward from IDNRK to STLNR.
-   This is a 5-hop cross-domain traversal from supplier to revenue impact.
-
-6. BOM Cost Rollup
-   Formula: Recursive CTE on STPO downward (STLNR->IDNRK), multiply MENGE at each level, JOIN MARA.STPRS for leaf node costs
-   Description: True material cost via recursive BOM explosion.
-   For ASSY-004: $286.60/unit. Do NOT use the assembly STPRS ($520) — that includes overhead markup.
-
-SAP Finance domain:
-7. COGS Raw Materials
-   Formula: SUM(CASE WHEN BSCHL='31' THEN DMBTR WHEN BSCHL='34' THEN -DMBTR END) FROM BSEG WHERE HKONT='0040100000'
-   Description: CRITICAL: BSCHL=31 (invoice) is POSITIVE. BSCHL=34 (credit memo) must be SUBTRACTED.
-   Credit memos represent quality returns and adjustments. Ignoring them overstates COGS.
-   Correct answer: $1,290,020. Wrong answer without sign logic: $1,353,690 or $1,417,360.
-
-8. Product Gross Margin
-   Formula: VBAP.NETWR - (BOM_Cost_Rollup * VBAP.KWMENG)
-   Description: Cross-domain formula spanning Sales -> Purchasing -> Finance.
-   Revenue from VBAP minus material COGS from recursive BOM cost rollup times units sold.
-   No direct FK connects VBAP to BSEG — the chain goes through BOM.
-
-9. Cost Center Total
-   Formula: SUM(WRTBTR) FROM COEP WHERE OBJNR = cost_object_code
-   Description: Total cost allocated to a specific cost center.
-   OBJNR code mapping: KS-MFG-US=US Manufacturing ($419,750), KS-MFG-EU=EU Manufacturing,
-   KS-MFG-AP=APAC Manufacturing, KS-LOG=Logistics, KS-QA=Quality Assurance.
-
-SAP Sales domain:
-10. Discount Leakage
-    Formula: SUM(ABS(KWERT)) FROM KONV WHERE KSCHL='K007'
-    Description: Customer discounts only (K007). KWERT values are NEGATIVE for discounts.
-    EXCLUDE KF00 (freight surcharges) — those ADD to revenue, not reduce it.
-    EXCLUDE PR00 (base prices) — those are not discounts.
-
-11. Disruption Revenue Impact
-    Formula: Sum of VBAP.NETWR for all assemblies identified by Supplier Disruption Cascade
-    Description: Revenue at risk from supplier disruption. Uses the Disruption Cascade
-    output (affected assemblies) then looks up their sales revenue in VBAP.
+$business-ontology Add these metrics to Procurement:
+- Supplier Count: number of active suppliers. Canonical answer to "how many suppliers".
+  Excludes probationary vendors. Formula: COUNT(DISTINCT LIFNR) WHERE account group is not probationary.
+- Vendor Record Count: all vendor master records, including probationary.
+  NOT the supplier count; use only when the question is explicitly about vendor records.
+- On-Time Delivery Rate: share of deliveries where actual goods-issue date <= planned date (LIKP).
+  Canonical OTD.
+- Carrier Reported On-Time Rate: carriers' self-reported OTD (LFA2.OTRAT).
+  NOT our OTD; do not use as on-time delivery.
+- Procurement Spend, BOM Cost Rollup
 ```
 
-> **What happens:** For each metric, the skill calls `SYSTEM$DRAFT_GLOSSARY_TERM({...})` with `itemKind: "METRIC"` and the `formula` field populated. The formula is stored as metadata on the term. The skill shows you the draft, then approves when you confirm.
+The same pattern applies in the other domains:
 
----
+- **Finance & Controlling:** COGS Raw Materials, COGS Freight, Cost Center Total, Product Gross Margin, Customer Profit, Break-even Discount.
+- **Sales & Distribution:** Revenue (net of discounts) versus Gross Bookings (NOT revenue), Customer Discounts, Revenue at Risk.
 
-### Phase 4: Add Code-Mapping Terms
+Notes:
+- `formula` is **descriptive**, not executable. The agent computes numbers with the SV metric and uses the formula to check it (see Phase 9). Write it so a reviewer can see the rule: the numerator, the denominator, the filter and the grain.
+- Only `METRIC` nodes carry `formula`. The formula is returned by `SYSTEM$GET_GLOSSARY_TERM`, not by graph or list reads.
+- **Cross-domain metrics are the exception.** No single SV computes *Product Gross Margin* or *Revenue at Risk*. Their definitions must name each component and the bridge between domains (for example, "sold assembly → BOM components → material standard cost"), because the agent combines those components itself.
 
-Code-mapping terms capture the meaning of cryptic ERP field codes. They use `itemKind: "TERM"` (the same kind as any general business concept) and have no formula. Their descriptions contain the code-to-meaning mappings the agent needs.
+### Phase 4: Add Terms and Policies
+
+**Terms** decode codes and capture company vocabulary.
 
 ```
-$business-ontology Add the following code-mapping terms:
-
-SAP Purchasing domain:
-1. MATKL Material Group — SAP material group codes:
-   043=Electronics, 044=Chemicals, 045=Metals, 046=Packaging, 047=Raw Materials, 048=Assembly
-2. KTOKK Account Group — SAP vendor account groups:
-   ZSTR=Strategic partner, ZSTD=Standard vendor, ZPRB=Probationary (exclude from active counts)
-
-SAP Finance domain:
-3. BSCHL Posting Key — SAP posting keys:
-   31=Vendor invoice (positive, add to totals), 34=Credit memo (negative, SUBTRACT from totals)
-4. HKONT GL Account — SAP GL accounts:
-   0040100000=COGS Raw Materials, 0040200000=COGS Freight, 0021100000=Accounts Payable
-5. OBJNR Cost Object — SAP cost objects:
-   KS-MFG-US=US Manufacturing, KS-MFG-EU=EU Manufacturing, KS-MFG-AP=APAC Manufacturing,
-   KS-LOG=Logistics, KS-QA=Quality Assurance
-
-SAP Sales domain:
-6. KSCHL Condition Type — SAP pricing condition types:
-   PR00=Base/list price, K007=Customer discount (include in discount calculations),
-   KF00=Freight surcharge (EXCLUDE from discount calculations)
-7. VKORG Sales Org — SAP sales organizations:
-   1000=Americas, 2000=EMEA, 3000=APAC
+$business-ontology Add these terms:
+Procurement:
+- Vendor Account Group: KTOKK on LFA1. ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary
+  (flagged EXCLUDE_FROM_ACTIVE_COUNT in reference table T077K).
+- Material Group: MATKL on MARA. Full mapping in T023T.
+- Tier A Supplier: our internal name for strategic suppliers, meaning vendors in account group ZSTR.
+  Synonyms: tier-A, strategic supplier.
+Finance & Controlling: Posting Key (31 = invoice, 34 = credit memo), GL Account, Cost Object
+Sales & Distribution: Condition Type (PR00 base, K007 customer discount, KF00 freight), Sales Organization
 ```
 
-> **Scaling code-mapping terms: one term per code field, not per code value.** In this demo we inline a handful of codes per term (e.g., 6 MATKL values). That works when the agent only needs a few business-critical codes. But real enterprises have code tables with tens of thousands or millions of values (e.g., 3M's product codes). The pattern for scale:
->
-> 1. **BON holds the code-mapping pattern, not the full lookup.** Create one TERM per code field: *"MATKL Material Group — maps material group codes to categories. Key business-rule codes: 047=Raw Materials (used in COGS), 048=Assembly (used in BOM). Full mapping in reference table T023."* The term describes what the code means and which values matter for business rules.
->
-> 2. **The reference table holds the full mapping.** The actual code/description table (e.g., T023 for MATKL, T077D for material types) lives in Snowflake as a regular table. The Semantic View includes a join relationship to it. The agent JOINs at query time to decode any code it encounters.
->
-> 3. **Sync is a data problem, not an ontology problem.** New product codes arrive via normal ETL/CDC into the reference table. The BON term only needs updating when the *business rules around codes change* (e.g., a new account group that should be excluded from counts) — not when new code values are added.
->
-> In short: BON governs the *meaning and rules* of a code field. The reference table holds the *values*. The agent uses both: BON for business rules, JOIN for lookups.
+**Policies** are rules the agent must apply.
 
----
+```
+$business-ontology Add these policies:
+- Procurement / Probationary Vendor Exclusion: probationary vendors are excluded from supplier
+  counts and supplier KPIs until promoted.
+- Finance & Controlling / Credit Memo Sign Rule: credit memos (posting key 34) are subtracted
+  from every cost and COGS total.
+- Procurement / BOM Input Protection: a material used at any level of a sold assembly's BOM is a
+  production input and must not be cut to reduce spend.
+```
+
+> **Scale code fields with one term per field, not one per value.** Inline only the values that business rules depend on. Keep the full code list in a reference table joined in the SV, and link the term to it with a `REFERENCE_DATA` representation. New code values arrive through ETL. The term changes only when the *rule* changes.
 
 ### Phase 5: Define Relationships
 
-Relationships connect entities across and within domains. Tell the skill the source, target, and relationship type.
+Use the most specific type. Direction is source → target, except `IS_A`, which runs instance or subtype → class.
 
-> **Relationship type guidance (per skill best practices):**
-> - `RELATED_TO` — general-purpose, use when no other type fits precisely (e.g., Supplier → Material)
-> - `HAS_PART` — target is a structural component of source (Material has part BOM Item)
-> - `MEASURES` — source is a metric that quantifies target (Inspection measures Material)
-> - `DERIVES` — target is generated/computed from source (Purchase Order derives AP Line Item)
-> - Other supported types: `HAS_VARIANT`, `IDENTIFIED_BY`, `CLASSIFIES`, `APPLIES_TO`, `SCOPES`, `EQUIVALENT_TO`, `CUSTOM`
-> - Prefer specific types over `RELATED_TO` when the semantics are clear. The skill's quality gate (`R-00`) validates that only supported types are used.
-
-You can define all 8 relationships in a single prompt:
-
-```
-$business-ontology Define the following relationships:
-- Supplier is related to Material
-- Material has part BOM Item
-- Purchase Order is related to Supplier
-- Carrier is related to Shipment
-- Inspection measures Material
-- Purchase Order derives AP Line Item (cross-domain: Purchasing → Finance)
-- AP Line Item derives Cost Posting (cross-domain: Finance)
-- Sales Order is related to Material (cross-domain: Sales → Purchasing)
-```
-
-<!-- VISUAL: Entity relationship graph with 3 domain subgraphs (see getting-started-business-ontology.html, DIAGRAM 3) -->
-<!-- Shows: SAP Purchasing (7 entities), SAP Finance (2 entities), SAP Sales (2 entities) with 8 cross-domain edges -->
-
-> **What happens:** For each prompt, the skill calls `SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP(sourceTermId, targetTermId, 'RELATED_TO')` using the termIds it stored from Phase 2. It shows the draft, then calls `SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP(relId)` when you confirm.
-
-> **Note:** The skill tracks termIds internally. You don't need to look up or paste IDs — just use the term names. If the skill can't resolve a name, it will ask you to disambiguate.
-
----
-
-### Phase 6: Verify Your Ontology
-
-After all terms and relationships are created, verify by querying the glossary:
+| Type | Use for | Demo example |
+|---|---|---|
+| `MEASURES` | a metric quantifies an entity | Supplier Count MEASURES Supplier |
+| `DERIVES` | the target is computed from the source | Revenue DERIVES Product Gross Margin |
+| `CLASSIFIES` | a code or dimension categorises an entity | Vendor Account Group CLASSIFIES Supplier |
+| `APPLIES_TO` | a policy constrains a concept | Probationary Vendor Exclusion APPLIES_TO Supplier Count |
+| `HAS_PART` | a structural component | Bill of Materials HAS_PART Material |
+| `HAS_VARIANT` | the same concept, scoped or narrowed | a look-alike or scoped variant of a canonical metric |
+| `IS_A` | a subtype or instance | Tier A Supplier IS_A Supplier |
+| `IDENTIFIED_BY`, `SCOPES`, `EQUIVALENT_TO` | keys, context boundaries, true synonyms with their own definition | — |
+| `RELATED_TO` | only when nothing else fits | used sparingly |
+| `CUSTOM` | only on explicit request, and needs a label | — |
 
 ```
-$business-ontology Show me all the terms in the SAP Purchasing domain
+$business-ontology Define these relationships (use domain-qualified names):
+- Procurement.Supplier Count MEASURES Procurement.Supplier
+- Procurement.Probationary Vendor Exclusion APPLIES_TO Procurement.Supplier Count
+- Procurement.Vendor Account Group CLASSIFIES Procurement.Tier A Supplier
+- Procurement.Tier A Supplier IS_A Procurement.Supplier
+- Sales & Distribution.Revenue DERIVES Finance & Controlling.Product Gross Margin
+- Procurement.BOM Cost Rollup DERIVES Finance & Controlling.Product Gross Margin
+Then find more relationships I missed in each domain.
 ```
 
-**Validation (recommended per skill best practices):**
+<!-- VISUAL 4: Demo ontology graph slice — Procurement / Finance & Controlling / Sales & Distribution subgraphs, 7 edges from 05_bon.sql (html #graph — Mermaid) -->
 
-Verify the full graph landed correctly — drafted relationships are invisible until approved, so always confirm via the graph:
+```mermaid
+flowchart LR
+  subgraph PR["Procurement"]
+    SUP["Supplier"]
+    TIA["Tier A Supplier"]:::term
+    VAG["Vendor Account Group"]:::term
+    SC["Supplier Count"]:::metric
+    PVE["Probationary Vendor Exclusion"]:::policy
+    BOM["Bill of Materials"]
+    MAT["Material"]
+    BCR["BOM Cost Rollup"]:::metric
+  end
+  subgraph FI["Finance and Controlling"]
+    PGM["Product Gross Margin"]:::metric
+  end
+  subgraph SD["Sales and Distribution"]
+    REV["Revenue"]:::metric
+  end
+  SC -->|MEASURES| SUP
+  PVE -->|APPLIES_TO| SC
+  VAG -->|CLASSIFIES| TIA
+  TIA -->|IS_A| SUP
+  BOM -->|HAS_PART| MAT
+  REV -->|DERIVES| PGM
+  BCR -->|DERIVES| PGM
+  classDef metric fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef term fill:#f3e8ff,stroke:#9333ea,color:#0f172a
+  classDef policy fill:#fee2e2,stroke:#dc2626,color:#0f172a
+```
+
+*A slice of the demo graph: entities (white), metrics (blue), terms (purple), policies (red). Every edge shown exists in `05_bon.sql`; the full graph has 40 nodes and 51 edges.*
+
+Underneath: `SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('Procurement.Tier A Supplier','Procurement.Supplier','IS_A')`. That call writes directly. `SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP(...)` followed by approval routes the edge through review. Both calls accept domain-qualified names or term IDs.
+
+> **Important:** agent search results **do not include relationships**. The agent follows links by reading definitions. Graph edges are for governance, lineage and the catalog. Any link the agent must follow, especially a cross-domain bridge, must **also** be stated in the description text.
+
+### Phase 6: Approve and Verify
+
+Drafts are invisible to agents until they are approved.
+
+```
+$business-ontology Show all drafts I created this session and approve them.
+```
 
 ```sql
--- Verify the complete ontology graph
-SELECT SYSTEM$GET_GLOSSARY_GRAPH();
+-- Approve specific drafts, or everything from this session. Never call with no arguments:
+-- an unscoped call promotes CREATE drafts account-wide.
+SELECT SYSTEM$APPROVE_ALL_GLOSSARY_TERMS('["<termId1>","<termId2>"]');
+SELECT SYSTEM$APPROVE_ALL_GLOSSARY_TERMS('[]', 'ACTIVE', '{"sessionId":"CURRENT_SESSION"}');
+
+-- Verify: approved graph (drafts are absent here; use SYSTEM$GET_GLOSSARY_DRAFT_GRAPH for those)
+SELECT SYSTEM$GET_GLOSSARY_GRAPH('Procurement');
+SELECT PARSE_JSON(SYSTEM$GET_GLOSSARY_TERM_LIST('Procurement')):terms;
+
+-- Formula is returned only by the per-term read (argument must be a constant)
+SELECT PARSE_JSON(SYSTEM$GET_GLOSSARY_TERM('Procurement.Supplier Count')):formula::STRING;
 ```
 
-Check the counts match expectations (29 terms, 8 relationships). If the relationship count is lower than expected, some may still be in DRAFT state — approve them with:
+Check the totals for the demo: 40 nodes (19 / 12 / 9) and 51 relationships.
+
+### Phase 7: Representations: Link Meaning to Implementation
+
+A representation records which Snowflake object implements a node. This is not just catalog decoration: the skill's agent builder reads approved SV representations to write each SV tool's description, and that description is how the agent chooses which view to query.
+
+<!-- VISUAL 5: Representation roles flowchart — IMPLEMENTS, RELATED_SEMANTIC_VIEW, REPRESENTS, DESCRIBES, REFERENCE_DATA (html Phase 7 — Mermaid) -->
+
+```mermaid
+flowchart LR
+  M["Canonical metric"]:::metric -->|IMPLEMENTS| SM["SV metric (field level)"]
+  X["Cross-domain metric"]:::metric -->|RELATED_SEMANTIC_VIEW| SVS["Each contributing SV"]
+  E["Entity"] -->|REPRESENTS| T["Table / view"]
+  C["Code term"]:::term -->|DESCRIBES| COL["Column"]
+  C -->|REFERENCE_DATA| REF["Code table (T077K, T023T)"]
+  classDef metric fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef term fill:#f3e8ff,stroke:#9333ea,color:#0f172a
+```
+
+| Role | From → To | Demo count |
+|---|---|---|
+| `IMPLEMENTS` | metric → the exact SV metric (field level) | 12 |
+| `RELATED_SEMANTIC_VIEW` | cross-domain metric → each SV that supplies a component | 8 |
+| `REPRESENTS` | entity → table or view | — |
+| `DESCRIBES` | term → column | 7 |
+| `REFERENCE_DATA` | term → code table (T077K, T023T) | — |
+
+```
+$business-ontology In Procurement, associate the metric Supplier Count with metric
+ACTIVE_SUPPLIER_COUNT (logical table VENDORS) in semantic view
+DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2.PURCHASING_ENRICHED_SV as IMPLEMENTS.
+Then propose representations for every other node in all three domains and show them for review.
+```
+
+Underneath:
 
 ```sql
-SELECT SYSTEM$APPROVE_ALL_GLOSSARY_RELATIONSHIPS();
+SELECT SYSTEM$CREATE_GLOSSARY_ASSOCIATION('Procurement.On-Time Delivery Rate',
+  '{"refType":"SEMANTIC_VIEW","fqn":"DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2.PURCHASING_ENRICHED_SV",
+    "subObjectType":"METRIC","entityQualifier":"SHIPMENTS","subObjectName":"OPERATIONAL_OTD_RATE"}',
+  'IMPLEMENTS');
 ```
 
-Spot-check a specific metric term to verify its formula:
+> In preview, representations are **not revalidated** when a semantic view is rebuilt, renamed or dropped, and there is no automatic drift detection between a definition and its implementation. After any SV change, re-check with `$business-ontology Find drift between ontology and semantic views`.
 
-```sql
-SELECT
-  PARSE_JSON(SYSTEM$GET_GLOSSARY_TERM('<termId>')):"name"::STRING as name,
-  PARSE_JSON(SYSTEM$GET_GLOSSARY_TERM('<termId>')):"itemKind"::STRING as kind,
-  PARSE_JSON(SYSTEM$GET_GLOSSARY_TERM('<termId>')):"formula"::STRING as formula,
-  PARSE_JSON(SYSTEM$GET_GLOSSARY_TERM('<termId>')):"description"::STRING as description;
-```
+### Phase 8: Confirm the Ontology Is Searchable
 
-Expected result for a metric term:
-
-| name | kind | formula | description |
-|---|---|---|---|
-| COGS Raw Materials | METRIC | SUM(CASE WHEN BSCHL='31' THEN DMBTR...) | Credit memos subtract... |
-
----
-
-### Phase 7: Bind Terms to Physical Objects (Representations)
-
-Representations link glossary terms to the Snowflake objects they describe. This is **optional for agent behavior** (the agent reads formulas from the SP, not from catalog metadata) but **required for production governance** — catalog discoverability, lineage tracing, impact analysis, and coverage tracking.
-
-> **Terminology:** The product calls these "representations." The underlying API uses `ASSOCIATION` / `ASSET`. Never say "binding."
-
-**Entities → Tables** (1 prompt for all 11):
-
-```
-$business-ontology Associate all entities with their source tables:
-- SAP Purchasing: Supplier → LFA1, Material → MARA, Purchase Order → EKPO,
-  Shipment → LIKP, Carrier → LFA2, Inspection → QALS, BOM Item → STPO
-- SAP Finance: AP Line Item → BSEG, Cost Posting → COEP
-- SAP Sales: Sales Order → VBAP, Pricing Condition → KONV
-All tables are in DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION
-```
-
-**Metrics → Semantic View** (1 prompt for all 11):
-
-```
-$business-ontology Associate all metrics with semantic view
-DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION.SAP_BASELINE_SV:
-- SAP Purchasing: Canonical Supplier Count, Operational OTD Rate,
-  Total Procurement Spend, Weighted Supply Risk Score,
-  Supplier Disruption Cascade, BOM Cost Rollup
-- SAP Finance: COGS Raw Materials, Product Gross Margin, Cost Center Total
-- SAP Sales: Discount Leakage, Disruption Revenue Impact
-```
-
-**Code-Mapping Terms → Columns** (1 prompt for all 7):
-
-```
-$business-ontology Associate all code-mapping terms with their source columns:
-- SAP Purchasing: KTOKK Account Group → column KTOKK in LFA1,
-  MATKL Material Group → column MATKL in MARA
-- SAP Finance: BSCHL Posting Key → column BSCHL in BSEG,
-  HKONT GL Account → column HKONT in BSEG,
-  OBJNR Cost Object → column OBJNR in COEP
-- SAP Sales: KSCHL Condition Type → column KSCHL in KONV,
-  VKORG Sales Org → column VKORG in VBAP
-All tables are in DB_ONTOLOGY_CONTROL_PLANE.SAP_PRODUCTION
-```
-
-<!-- VISUAL: Representations binding flowchart (see getting-started-business-ontology.html, DIAGRAM 4) -->
-<!-- Shows: 11 Entities → TABLE, 11 Metrics → SEMANTIC_VIEW, 7 Code-Mapping Terms → COLUMN -->
-
-> **What happens:** The skill calls `SYSTEM$CREATE_GLOSSARY_ASSOCIATION()` for each term, linking it to the physical object. Entities bind with `RELATED_TABLE` role, metrics with `RELATED_SEMANTIC_VIEW`, code-mapping terms with `RELATED_TABLE` (column refType).
-
-> **With vs without representations:**
-> | Capability | Without | With |
-> |---|---|---|
-> | Agent answers questions | Works | Same — no change |
-> | Catalog shows term → table link | No | Yes |
-> | Lineage traces concept → object | No | Yes |
-> | "Which tables are governed?" | Can't answer | 11/15 tables linked |
-> | "If I drop LFA1, what concepts break?" | Can't answer | Supplier, Carrier, KTOKK Account Group |
-
----
-
-## Surfacing Ontology Through a Cortex Agent
-
-The glossary is the single source of truth. Snowflake's native `snowscope_search` tool searches the glossary index directly — no custom stored procedure needed. Update a term in the glossary and the agent finds the new definition on the next question.
-
-### How It Works
-
-<!-- VISUAL: Agent inference flow diagram (see getting-started-business-ontology.html, DIAGRAM 5) -->
-
-```
-User Question
-      ↓
-Cortex Agent
-      ↓  searches business_ontology tool (native glossary search)
-      ↓
-Snowflake's built-in search index over all approved BON terms
-  → finds relevant definitions, formulas, code mappings, relationships
-      ↓
-Agent reads formulas, writes SQL accordingly
-      ↓  calls query_data tool
-      ↓
-Semantic View translates to SQL, executes
-      ↓
-Correct Answer (grounded in live glossary terms)
-```
-
-### Step A: Confirm Your Ontology Is Searchable
-
-Before creating the agent, verify that your approved terms are indexed. In a CoCo terminal:
+Agents search an index, not the live glossary. **Indexing can take up to about 6 hours**, and deleted terms can keep appearing in results for a while after deletion.
 
 ```bash
-cortex search object "supplier count metric" --types=business-ontology
+cortex search object "supplier count" --types=business-ontology
+cortex search object "tier a suppliers" --types=business-ontology
 ```
 
-Check that the results include your domain-qualified names, kinds, definitions, and formulas. If no results appear, check that your terms are approved (not draft), your role has domain access, and the search index is current.
+Results should show domain-qualified names such as `Procurement.Supplier Count`, with their kind and definition. If they don't, check that the terms are approved, that your role can read the domain, and that enough time has passed for indexing. Don't benchmark until the index probes pass. The demo harness checks this with `run_benchmark.py --check-index`.
 
-### Step B: Create the Semantic View
+### Phase 9: Build the Agent
 
-The Semantic View defines the queryable surface — tables, columns, joins:
+Let the skill generate and verify the spec:
 
-```sql
-CREATE OR REPLACE SEMANTIC VIEW MY_BASELINE_SV
-  COMMENT = 'Baseline — tables, columns, joins only'
-AS (
-  TABLES (LFA1, MARA, EKPO, LIKP, BSEG, COEP, VBAP, KONV, ...)
-  RELATIONSHIPS (
-    EKPO (LIFNR) REFERENCES LFA1 (LIFNR),
-    EKPO (MATNR) REFERENCES MARA (MATNR),
-    BSEG (EBELN) REFERENCES EKPO (EBELN),
-    VBAP (MATNR) REFERENCES MARA (MATNR),
-    ...
-  )
-);
+```
+$business-ontology Create an agent that uses the ontology for Procurement, Finance & Controlling
+and Sales & Distribution, with tools for PURCHASING_ENRICHED_SV, FINANCE_ENRICHED_SV and
+SALES_ENRICHED_SV in DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2.
 ```
 
-### Step C: Create the BON Agent
+To add the ontology to an agent you already have (the change is additive and keeps your instructions):
 
-The agent has **two tools**: a native BON search tool for business definitions and a Semantic View for data queries. The `experimental.EnableSnowscopeBusinessOntologySearch` flag enables the BON search corpus.
-
-```sql
-CREATE OR REPLACE AGENT MY_BON_AGENT
-  COMMENT = 'Agent with native Business Ontology search + Semantic View data queries'
-  PROFILE = '{"display_name": "BON Assistant"}'
-  FROM SPECIFICATION
-  $$
-  models:
-    orchestration: auto
-
-  experimental:
-    EnableSnowscopeBusinessOntologySearch: true
-
-  orchestration:
-    budget:
-      seconds: 90
-      tokens: 24000
-
-  instructions:
-    response: |
-      You are an enterprise analytics assistant with access to governed
-      business definitions from Business Ontology. When answering:
-      - Show the governed formula from BON, then the query result from data.
-      - If BON provides a formula, USE IT to guide your SQL generation.
-      - Pay attention to sign logic, code mappings, and cross-domain chains.
-      - Never invent a formula. If BON returns no formula, say so.
-      - Always show your reasoning.
-    orchestration: |
-      CRITICAL WORKFLOW for every question:
-
-      STEP 1: Call business_ontology FIRST to get governed definitions,
-      formulas, and code mappings relevant to the question.
-
-      STEP 2: Use the BON context to understand what field codes mean
-      and which formula applies.
-
-      STEP 3: Call query_data to run the actual data query, using the
-      formula and code-mapping knowledge from BON.
-
-      If the question is purely about definitions (what does X mean?),
-      answer from BON alone without querying data.
-
-      If a lookup returns nothing, retry once with a likely synonym,
-      then report the miss rather than guessing.
-
-  tools:
-    - tool_spec:
-        type: snowscope_search
-        name: business_ontology
-        description: |
-          Search Business Ontology for governed business terms, metrics,
-          entities, and code-mapping terms. Returns definitions, formulas, synonyms,
-          and domain context. Call this FIRST before any data query.
-    - tool_spec:
-        type: cortex_analyst_text_to_sql
-        name: query_data
-        description: "Query production data."
-
-  tool_resources:
-    business_ontology:
-      corpus: businessOntology
-    query_data:
-      semantic_view: "MY_DATABASE.MY_SCHEMA.MY_BASELINE_SV"
-      execution_environment:
-        type: "warehouse"
-        warehouse: "MY_WAREHOUSE"
-  $$;
+```
+$business-ontology Add the ontology to agent DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2.ENRICHED_AGENT
 ```
 
-Three settings are required and not validated at create time — a misspelling is accepted silently:
+<!-- VISUAL 6: Agent answer flow — search BON per term → compute with implementing SV metric → combine → cite governed term (html #agent — Mermaid) -->
+
+```mermaid
+flowchart TD
+  Q["User question"] --> A["Cortex Agent"]
+  A -->|"1 search each business term"| B["business_ontology (snowscope_search)"]:::bon
+  B -->|"canonical metric, policies, vocabulary"| A
+  A -->|"2 compute with implementing SV metric"| S["query_purchasing / query_finance / query_sales"]
+  S --> A
+  A -->|"3 combine across domains if needed"| R["Answer + governed term cited"]:::ok
+  classDef bon fill:#dbeafe,stroke:#2563eb,color:#0f172a
+  classDef ok fill:#dcfce7,stroke:#16a34a,color:#0f172a
+```
+
+*The semantic view computes the number. BON decides which number and explains why. The formula is a check, not a SQL template.*
+
+The core of the demo's `BON_AGENT` (full spec in `demo/sql/v2/07_agents.sql`):
+
+```yaml
+models:
+  orchestration: auto
+experimental:
+  EnableSnowscopeBusinessOntologySearch: true
+orchestration:
+  budget: {seconds: 150, tokens: 40000}
+instructions:
+  orchestration: |
+    Before querying data, search business_ontology for each business term in the question,
+    one concept per search. Use the governed definition to choose the canonical metric and to
+    apply any policy. Compute numbers with the semantic view metric that implements the term;
+    use the ontology formula only as a check. For cross-domain metrics, query each domain tool
+    and combine the results as the definition describes.
+  response: |
+    State the answer first. When you used a governed definition, name the term (domain.node)
+    and the semantic view metric that implements it.
+tools:
+  - tool_spec: {type: snowscope_search, name: business_ontology,
+                description: "Governed business terms, metrics, entities and policies."}
+  - tool_spec: {type: cortex_analyst_text_to_sql, name: query_purchasing, description: "..."}
+  - tool_spec: {type: cortex_analyst_text_to_sql, name: query_finance,    description: "..."}
+  - tool_spec: {type: cortex_analyst_text_to_sql, name: query_sales,      description: "..."}
+tool_resources:
+  business_ontology: {corpus: businessOntology}
+  query_purchasing: {semantic_view: DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2.PURCHASING_ENRICHED_SV, ...}
+  # query_finance, query_sales likewise
+```
+
+**`CREATE AGENT` does not validate these three settings.** A typo is accepted, and the agent then silently never searches the ontology:
+
 - `experimental.EnableSnowscopeBusinessOntologySearch: true`
-- `tools[].tool_spec.type: snowscope_search`
-- `tool_resources.business_ontology.corpus: businessOntology`
+- `tool_spec.type: snowscope_search`
+- `tool_resources.business_ontology.corpus: businessOntology` (the resource key must equal the tool `name`)
 
-After creation, run `DESCRIBE AGENT MY_BON_AGENT` and check the `agent_spec` JSON for these values.
+Read them back with `DESCRIBE AGENT`, or ask: `$business-ontology Verify the ontology settings on agent BON_AGENT`. Note the different spellings: the CLI search type is `business-ontology`, while the agent corpus is `businessOntology`.
 
-### Key Agent Design Decisions
+### Phase 10: Evaluate with a Fair A/B Test
 
-| Setting | Baseline Agent | BON Agent | Why |
-|---|---|---|---|
-| Tools | 1 (text-to-sql) | 2 (snowscope_search + text-to-sql) | BON needs the ontology search tool |
-| BON search | No | `snowscope_search` with `businessOntology` corpus | Native integration — no custom SP needed |
-| Token budget | 16,000 | 24,000 | BON search results add context tokens |
-| Time budget | 60s | 90s | Two tool calls instead of one |
-| Instructions | Generic | "search BON first, then query" | Must enforce "context first" pattern |
+Build two agents that are identical except for the ontology tool: same SVs, model, budget and core instructions. In the demo these are `ENRICHED_AGENT` (B) and `BON_AGENT` (C).
+
+- **Questions:** write 5–10 per domain where meaning is contested (look-alike metrics, company vocabulary, policies, cross-domain chains). Add **controls** where the SV alone should succeed, and at least one question about a concept that doesn't exist, which the agent should decline to answer.
+- **Runs:** run each question several times, because agents vary from run to run. The demo used 3 runs, and 5 for the hard tiers.
+- **Scoring:** a hedged answer ("15 or 14") counts as wrong. Track accuracy, right on every run, hedging, and whether the answer cites a governed term.
+- **Starting point:** the demo harness is `demo/benchmark/run_benchmark.py`, with ground truth in `demo/sql/v2/02_benchmark_ground_truth.sql`.
+
+```
+$business-ontology Using the approved nodes in Procurement, draft 10 evaluation questions:
+4 where two plausible metrics exist, 2 using company vocabulary, 2 that need a policy,
+1 control a semantic view alone should answer, and 1 about a term that doesn't exist.
+For each, give the expected answer, the wrong-but-defensible answer, and the governing node.
+```
+
+The results usually show the gains clustered in a small number of contested questions, with controls tied. That pattern tells you the ontology is working where it should.
 
 ---
 
-## Updating and Enriching Your Ontology
+## Updating the Ontology
 
-### Add New Terms
-
-```
-$business-ontology Add a metric called Net Revenue to SAP Sales.
-Formula: SUM(KWERT) FROM KONV WHERE KSCHL IN ('PR00','KF00') + SUM(KWERT) FROM KONV WHERE KSCHL='K007'
-Description: Base price + surcharges + discounts (discounts are negative).
-```
-
-### Modify Existing Terms
-
-To update a term's description or formula, draft a new version:
-
-```
-$business-ontology Update the Canonical Supplier Count metric — change the description to:
-Excludes ZPRB probationary and ZTMP temporary vendors. Answer: 12.
-```
-
-### Add More Relationships
-
-```
-$business-ontology Define a relationship: Canonical Supplier Count measures Supplier
-```
-
-```
-$business-ontology Define a relationship: COGS Raw Materials derives from BOM Cost Rollup
-```
-
-### Discover Missing Relationships
-
-```
-$business-ontology Find more relationships in the SAP Finance domain
-```
-
-The skill analyzes existing nodes and suggests edges you might have missed (e.g., "Cost Center Total MEASURES Cost Posting").
-
-### Import from Existing Semantic Views
-
-If you already have Semantic Views, the skill can bootstrap your ontology from them:
-
-```
-$business-ontology Bootstrap ontology from our semantic views
-```
-
-The skill scans your SV estate, extracts business concepts from table/column names and comments, proposes nodes, and lets you review before committing.
-
-### Import from dbt
-
-```
-$business-ontology Extract ontology from our dbt manifest at @my_stage/manifest.json
-```
-
-### Bulk Import from CSV
-
-```
-$business-ontology Import ontology terms from @my_stage/terms.csv
-```
-
----
-
-## Formulas: SV Metrics vs BON Formulas
-
-| Aspect | SV Metric | BON Formula |
-|---|---|---|
-| **Scope** | Single-column aggregation | Multi-table, conditional, recursive |
-| **Logic** | `SUM(NETWR)`, `AVG(STPRS)` | `CASE WHEN BSCHL='31' THEN DMBTR ELSE -DMBTR END` |
-| **Cross-domain** | No (within one SV) | Yes (Sales → Purchasing → Finance) |
-| **Business rules** | None | Exclusions, sign logic, policy weights |
-| **Composability** | No | Yes — Gross Margin references BOM Cost Rollup |
-| **Where stored** | Semantic View YAML | Glossary (SYSTEM$ API) — searched by native `snowscope_search` |
-| **Who reads it** | Cortex Analyst (text-to-sql) | The LLM agent (as guidance for writing SQL) |
-
-### How Formulas Flow
-
-<!-- VISUAL: Formula flow diagram (see getting-started-business-ontology.html, DIAGRAM 6) -->
-
-```
-Glossary (SYSTEM$ API)              Native Search Index           Agent
-────────────────────                ───────────────────           ─────
-METRIC term with                    Snowflake indexes all          Agent's snowscope_search
-"formula": "COUNT(DISTINCT     →    approved BON terms         →   finds relevant terms and
-LIFNR) FROM LFA1 WHERE             automatically.                  reads formula text,
-KTOKK IN ('ZSTR','ZSTD')"          No custom SP needed.            then writes:
-                                                                    SELECT COUNT(DISTINCT LIFNR)
-Single source of truth.             Search-based retrieval.         FROM LFA1
-Updated via skill or SQL.           Always current with             WHERE KTOKK IN ('ZSTR','ZSTD')
-                                    approved terms.
-```
-
-The formula is **guidance for the LLM**, not executable code. The glossary stores it, the native search index delivers it, and the agent uses it to write the correct SQL.
-
----
-
-## Architecture Summary
-
-<!-- VISUAL: Architecture summary diagram (see getting-started-business-ontology.html, DIAGRAM 7) -->
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     BUSINESS ONTOLOGY                       │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │Purchasing│  │ Finance  │  │  Sales   │  ← 3 Domains    │
-│  │ 15 terms │  │ 8 terms  │  │ 6 terms  │                 │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘                 │
-│       │              │              │                       │
-│       └──── 8 cross-domain relationships ───┘              │
-│                                                             │
-│  11 ENTITY nodes (no formula)                              │
-│  11 METRIC nodes (with formula — the key differentiator)   │
-│   7 TERM nodes (code-mapping terms for field codes)          │
-├─────────────────────────────────────────────────────────────┤
-│                DELIVERY MECHANISM                           │
-│                                                             │
-│  Native snowscope_search with businessOntology corpus:     │
-│    • Agent searches glossary index per question             │
-│    • Returns relevant definitions, formulas, code mappings    │
-│    • No custom SP needed — Snowflake manages the index     │
-│    • Always current with approved terms                     │
-├─────────────────────────────────────────────────────────────┤
-│                   CORTEX AGENT                              │
-│                                                             │
-│  Tool 1: business_ontology → snowscope_search (BON first)  │
-│  Tool 2: query_data → text-to-SQL via Semantic View        │
-│                                                             │
-│  Agent flow: search BON → understand formulas → write SQL  │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Quick Reference: CoCo Skill Prompts
-
-| Task | Exact Prompt |
+| Task | Prompt |
 |---|---|
-| Create domain | `$business-ontology Create a domain called <name>` |
-| Add entity | `$business-ontology Add an entity called <name> to <domain>. Description: <text>` |
-| Add metric | `$business-ontology Add a metric called <name> to <domain>. Formula: <sql>. Description: <text>` |
-| Add code-mapping term | `$business-ontology Add a term called <name> to <domain>. Description: <code mappings>` |
-| Add relationship | `$business-ontology Define a relationship: <source> is related to <target>` |
-| Add HAS_PART | `$business-ontology Define a relationship: <parent> has part <child>` |
-| Add DERIVES | `$business-ontology Define a relationship: <derived> derives from <source>` |
-| Add MEASURES | `$business-ontology Define a relationship: <metric> measures <entity>` |
-| Import from SVs | `$business-ontology Bootstrap ontology from our semantic views` |
-| Import from dbt | `$business-ontology Extract ontology from our dbt manifest at <path>` |
-| Import from CSV | `$business-ontology Import ontology terms from <stage_path>` |
-| Find relationships | `$business-ontology Find more relationships in the <domain> domain` |
-| Delete domain | `$business-ontology Delete the <domain> domain` |
-| Associate entity→table | `$business-ontology In the <domain> domain, associate the entity <name> with table <FQN>` |
-| Associate metric→SV | `$business-ontology In the <domain> domain, associate the metric <name> with semantic view <FQN>` |
-| Associate term→column | `$business-ontology In the <domain> domain, associate the term <name> with column <col> in table <FQN>` |
+| Edit a definition or formula | `$business-ontology Update Procurement.Supplier Count: also exclude temporary vendors (ZTMP)` |
+| Add a metric | `$business-ontology Add a metric Net Price Realization to Sales & Distribution. Formula: ... Description: ...` |
+| Find missing edges | `$business-ontology Find more relationships in the Finance & Controlling domain` |
+| Rename a node | `$business-ontology Rename Procurement.Inspection Lot to Quality Inspection` |
+| Delete a domain | `$business-ontology Delete the <domain> domain` |
+
+Edits to **ACTIVE** nodes go through an **edit card** (`SYSTEM$DRAFT_GLOSSARY_TERM_UPDATE`). The live definition stays in force until the edit is approved, and agents see the change only after the index refreshes. The skill's quality gate shows the old and new values side by side.
 
 ---
 
-## API Reference
+## Bootstrap from Existing Semantic Views
 
-| Operation | SYSTEM$ Call |
+```
+$business-ontology Bootstrap ontology from our semantic views in DB_ONTOLOGY_CONTROL_PLANE.SAP_BON_V2
+```
+
+The skill scans the views (`SHOW`/`DESCRIBE`, metrics, comments, verified queries, join graph) and proposes:
+
+- entities derived from the join graph, not one per table;
+- metric and term candidates, with duplicates across views merged;
+- a domain for each candidate, with its provenance shown;
+- `IMPLEMENTS` representations back to the source metrics.
+
+<!-- VISUAL 7: Bootstrap-from-SV flow — scan → candidates → steward review → approved ontology, plus hand-added canonical choices/policies/bridges (html #bootstrap — Mermaid) -->
+
+```mermaid
+flowchart LR
+  SV["Semantic views: metrics, comments, VQRs, joins"] --> SCAN["Skill scans estate"]
+  SCAN --> CAND["Candidates: entities from join graph, merged metrics, domain + provenance, IMPLEMENTS links"]
+  CAND --> REV{"Steward review"}
+  REV --> ON["Approved ontology"]
+  HUMAN["Add by hand: canonical choice, look-alikes, vocabulary, policies, bridges"]:::key --> ON
+  classDef key fill:#dbeafe,stroke:#2563eb,color:#0f172a
+```
+
+Nothing is written until you approve it at review. What the import **can't** infer is exactly where the value lies:
+
+- which of two look-alike metrics is canonical;
+- company vocabulary such as "Tier A";
+- policies;
+- cross-domain bridges.
+
+Add those by hand using phases 3–5.
+
+Other entry points:
+
+| You have | Prompt |
 |---|---|
-| Create domain | `SYSTEM$CREATE_GLOSSARY_DOMAIN('domain_name')` |
-| Draft term | `SYSTEM$DRAFT_GLOSSARY_TERM('{"domainName":"...", "name":"...", "itemKind":"ENTITY|METRIC|TERM", "description":"...", "formula":"..."}')` |
-| Approve term | `SYSTEM$APPROVE_GLOSSARY_TERM('<termId>')` |
-| Draft relationship | `SYSTEM$DRAFT_GLOSSARY_RELATIONSHIP('<sourceTermId>', '<targetTermId>', '<relType>')` |
-| Approve relationship | `SYSTEM$APPROVE_GLOSSARY_RELATIONSHIP('<relId>')` |
-| Get term | `SYSTEM$GET_GLOSSARY_TERM('<termId>')` |
-
-**Gotchas:**
-- `itemKind` not `termType` — field name matters
-- Only `METRIC` terms support the `formula` field
-- Relationships use **positional args**, not JSON: `('sourceId', 'targetId', 'RELATED_TO')`
-- Single quotes in JSON must be escaped as `''` in SQL
+| CSV, spreadsheet or document on a stage | `$business-ontology Import ontology terms from @my_stage/glossary.csv` |
+| dbt project | `$business-ontology Extract ontology from our dbt manifest at @my_stage/manifest.json` |
+| Table and column comments | `$business-ontology Extract terms from our tables in <db.schema>` |
+| Cortex Sense context | `$business-ontology Promote our <context> context to the ontology` |
+| Knowledge in people's heads | `$business-ontology I need an ontology for procurement. We count suppliers excluding probationary vendors...` |
+| OWL / RDF / Turtle | Use the `business-ontology-owl-dev` skill |
 
 ---
 
 ## Troubleshooting
 
-| Issue | Cause | Fix |
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| `Unknown function SYSTEM$CREATE_GLOSSARY_DOMAIN` | Feature flag not enabled | Contact your Snowflake account team |
-| `Invalid identifier` in formula | Single quotes not escaped | Use `''` inside SQL strings within JSON |
-| Relationship draft fails | Wrong API format | Use positional args, not JSON object |
-| Agent ignores formulas | BON search not configured or instructions don't enforce "search BON first" | Verify `EnableSnowscopeBusinessOntologySearch: true` and `corpus: businessOntology` in agent spec |
-| Formula returns wrong number | Credit memo / exclusion logic missing | Check BON formula — it encodes sign logic |
-| Agent uses OTRAT instead of computing OTD | No warning about unreliable self-reported data | Add WARNING in formula description |
-| Skill can't find a term by name | Ambiguous name across domains | Use full name or specify domain |
+| `Unknown function SYSTEM$CREATE_GLOSSARY_DOMAIN` | Feature not enabled | Contact your account team |
+| Agent never calls `business_ontology` | Flag, type or corpus misspelled (accepted silently) | `DESCRIBE AGENT` and check all three settings |
+| Search returns nothing for new terms | Terms still in draft, or not yet indexed | Approve them, then wait up to about 6 hours and re-probe |
+| Deleted or renamed terms still returned | Stale index | Wait for re-index; don't benchmark until probes are clean |
+| Agent still picks the look-alike metric | No look-alike node, or the definition doesn't say "NOT ..." | Add the look-alike as its own metric that says it isn't canonical; add the policy |
+| Agent can't follow a cross-domain link | The link exists only as a graph edge | Also state the bridge in the definition text, since search doesn't return edges |
+| Agent picks the wrong SV tool | Tool description doesn't name the concepts | Add `IMPLEMENTS` representations and regenerate the spec, or edit the tool descriptions |
+| `GET_GLOSSARY_TERM` error inside a query | The argument must be a constant | Pass a literal name or ID |
+| Representation points at a rebuilt view | No revalidation in preview | Re-run the drift check after SV changes |
+| `Invalid identifier` inside JSON | Unescaped single quote | Write `'` as `''` inside SQL string literals |
 
 ---
 
-## Bootstrap from Existing Knowledge
+## API Quick Reference
 
-<!-- VISUAL: Bootstrap entry points flowchart (see getting-started-business-ontology.html, DIAGRAM 8) -->
+| Operation | Call |
+|---|---|
+| Create domain | `SYSTEM$CREATE_GLOSSARY_DOMAIN('<name>')` |
+| Draft node | `SYSTEM$DRAFT_GLOSSARY_TERM('{"name":..,"domainName":..,"itemKind":"ENTITY\|METRIC\|TERM","description":..,"formula":..,"synonyms":[..]}')` |
+| Approve nodes | `SYSTEM$APPROVE_ALL_GLOSSARY_TERMS('["<id>",...]')` or `SYSTEM$APPROVE_GLOSSARY_TERM('<id or name>')` |
+| Edit an active node | `SYSTEM$DRAFT_GLOSSARY_TERM_UPDATE(...)`, then approve the edit card |
+| Relationship | `SYSTEM$CREATE_GLOSSARY_RELATIONSHIP('<src>','<tgt>','<TYPE>')` or `DRAFT_` + `APPROVE_` |
+| Representation | `SYSTEM$CREATE_GLOSSARY_ASSOCIATION('<node>','<assetRefJson>','<ROLE>')` |
+| Read | `SYSTEM$GET_GLOSSARY_TERM('<id or domain.name>')`, `SYSTEM$GET_GLOSSARY_TERM_LIST('<domain>')`, `SYSTEM$GET_GLOSSARY_GRAPH('<domain>')`, `SYSTEM$GET_GLOSSARY_DRAFT_GRAPH()` |
+| Delete domain | `SYSTEM$DELETE_GLOSSARY_DOMAIN('<domain>')` |
 
-You don't have to start from scratch. The skill supports three entry points depending on what you already have:
-
-### 1. Existing Documents or Business Glossary
-
-If your organization already has definitions in a spreadsheet, markdown file, wiki, or data dictionary — import them directly. The skill extracts concepts, synonyms, and proposed relationships from your source material.
-
-```
-$business-ontology Import ontology terms from @my_stage/business_glossary.csv
-```
-
-```
-$business-ontology Extract glossary terms from this document: @my_stage/data_dictionary.md
-```
-
-**What it does:**
-- Reads definitions from your file (CSV, markdown, or staged document)
-- Proposes entities, metrics, and terms with descriptions
-- Suggests relationships based on co-occurrence and naming patterns
-- Presents everything for review — you approve or edit before committing
-
-**Best for:** Organizations that already maintain a data dictionary, business glossary spreadsheet, or domain knowledge wiki.
-
-### 2. Existing Semantic Views
-
-If you already have Semantic Views in Snowflake, the skill can reverse-engineer business concepts from them — table names, column comments, join patterns, and VQR descriptions all become candidate ontology nodes.
-
-```
-$business-ontology Bootstrap ontology from our semantic views
-```
-
-**What it does:**
-- Scans your SV estate (all semantic views in the account)
-- Extracts business concepts from table/column names, comments, and join relationships
-- Deduplicates across multiple SVs (the same concept in two SVs becomes one node)
-- Reconciles shared concepts and proposes business relationships
-- Detects drift between existing glossary terms and SV definitions
-- Presents candidates for review — you approve, edit, or skip
-
-```
-$business-ontology Find drift between ontology and semantic views
-```
-
-**Best for:** Teams that have already invested in Semantic Views and want to layer governed business meaning on top without re-entering definitions.
-
-### 3. Business Expertise (Conversational)
-
-If your knowledge lives in people's heads rather than documents, describe the domain and let the skill draft terms with AI assistance. Domain experts review and approve — they don't need to write JSON or SQL.
-
-```
-$business-ontology I need to build an ontology for our supply chain procurement domain.
-We track vendors, purchase orders, materials, and shipments.
-Key metrics are supplier count (excluding probationary), on-time delivery rate,
-and total procurement spend. We use SAP with coded fields like KTOKK and MATKL.
-```
-
-**What it does:**
-- AI extracts entities, metrics, and code-mapping terms from your description
-- Proposes formulas based on the business rules you describe
-- Suggests relationships between concepts
-- Drafts everything — domain experts review and approve
-
-```
-$business-ontology Add more context: our COGS calculation must subtract credit memos
-(BSCHL=34) from invoices (BSCHL=31). Ignoring credit memos overstates COGS by ~10%.
-```
-
-**Best for:** Greenfield projects, domain-specific knowledge that isn't documented, or teams where the business expert and the data engineer are different people.
-
-### Choosing Your Entry Point
-
-| You have... | Start with | Prompt |
-|---|---|---|
-| CSV/spreadsheet of definitions | Path 1: Import | `$business-ontology Import ontology terms from @stage/file.csv` |
-| Semantic Views in Snowflake | Path 2: Bootstrap from SVs | `$business-ontology Bootstrap ontology from our semantic views` |
-| dbt project with descriptions | Path 2 variant: Import from dbt | `$business-ontology Extract ontology from our dbt manifest at @stage/manifest.json` |
-| Domain knowledge (not documented) | Path 3: Conversational | `$business-ontology I need to build an ontology for <your domain>...` |
-| Cortex Sense context already built | Promote to glossary | `$business-ontology Promote our <context_name> context to the ontology` |
-| Nothing yet | Phase 1–5 above | Follow the step-by-step prompts in this guide |
-
-All paths converge to the same result: governed glossary terms with formulas, connected by relationships, ready to surface through a Cortex Agent.
+Gotchas:
+- The field is `itemKind`, not `termType`.
+- Only `METRIC` nodes take `formula`.
+- Relationship calls use positional arguments.
+- Never call approve-all without arguments.
 
 ---
 
 ## References
 
-- [Business Ontology](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology) — Overview and concepts
-- [Access Control](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology-access-control) — Domain-level permissions
-- [Agent Integration](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology-agents) — Native `snowscope_search` with `businessOntology` corpus
-- [Cortex Sense](https://docs.snowflake.com/LIMITEDACCESS/cortex-sense) — Managed runtime that integrates BON alongside tables and semantic views
+- [Business Ontology](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology): overview and concepts
+- [Access control](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology-access-control): domain-level privileges
+- [Agent integration](https://docs.snowflake.com/en/LIMITEDACCESS/snowflake-horizon/business-ontology-agents): `snowscope_search` with the `businessOntology` corpus
+- [Horizon Context](https://docs.snowflake.com/en/user-guide/snowflake-horizon/horizon-context): how Business Ontology fits with semantic views and Cortex Sense
+- Companion posts in this repo: `blog-why-your-agent-needs-an-ontology.md` (why) and `blog-business-ontology-best-practices.md` (how to build and evaluate)

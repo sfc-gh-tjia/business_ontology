@@ -16,7 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Business Ontology Evaluation
             </h1>
             <p className="text-sm text-[var(--text-muted)] mt-1">
-              SAP Supply Chain — 11 questions across 3 tiers: business knowledge, cross-domain reasoning, and strategic decision support
+              SAP Supply Chain — same well-built semantic views, with and without the Business Ontology. 20 questions across 4 tiers.
             </p>
           </div>
         </header>

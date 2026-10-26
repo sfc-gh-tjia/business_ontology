@@ -2,8 +2,8 @@
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { EVAL_QUESTIONS, TIER_LABELS } from "@/lib/questions";
-import { AgentResponse } from "@/lib/types";
+import { DEMO_QUESTIONS, TIER_LABELS } from "@/lib/questions";
+import { AgentResponse, EvalQuestion } from "@/lib/types";
 
 function AgentPanel({ label, response, color }: { label: string; response: AgentResponse | null; color: string }) {
   if (!response) {
@@ -26,6 +26,16 @@ function AgentPanel({ label, response, color }: { label: string; response: Agent
           {response.elapsed}s
         </span>
       </div>
+      {response.tools && response.tools.length > 0 && (
+        <div className="px-5 py-2 border-b border-[var(--border)] flex flex-wrap gap-1.5 text-xs">
+          <span className="text-[var(--text-muted)]">Tools:</span>
+          {response.tools.map((t, i) => (
+            <span key={i} className={`px-2 py-0.5 rounded-full font-mono ${t === "business_ontology" ? "bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200" : "bg-[var(--bg)] border border-[var(--border)]"}`}>
+              {i + 1}. {t}
+            </span>
+          ))}
+        </div>
+      )}
       <div className="p-5">
         {response.text ? (
           <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
@@ -53,18 +63,18 @@ function AgentPanel({ label, response, color }: { label: string; response: Agent
 }
 
 export default function ComparisonView() {
-  const [selectedIdx, setSelectedIdx] = useState<number>(0); // default to Q1
+  const [selectedIdx, setSelectedIdx] = useState<number>(3); // default to Q06 (conflicting definitions)
   const [customQ, setCustomQ] = useState("");
   const [loading, setLoading] = useState(false);
   const [baseline, setBaseline] = useState<AgentResponse | null>(null);
   const [bon, setBon] = useState<AgentResponse | null>(null);
-  const [currentQ, setCurrentQ] = useState<{ q: string; id: string; expected: string } | null>(null);
+  const [currentQ, setCurrentQ] = useState<{ q: string; id: string; meta: EvalQuestion | null } | null>(null);
 
-  const runQuestion = async (question: string, qId: string, expected: string) => {
+  const runQuestion = async (question: string, qId: string, meta: EvalQuestion | null) => {
     setLoading(true);
     setBaseline(null);
     setBon(null);
-    setCurrentQ({ q: question, id: qId, expected });
+    setCurrentQ({ q: question, id: qId, meta });
 
     try {
       const res = await fetch("http://localhost:5001/api/agent", {
@@ -84,7 +94,7 @@ export default function ComparisonView() {
 
   const grouped = Object.entries(TIER_LABELS).map(([tier, label]) => ({
     label,
-    questions: EVAL_QUESTIONS.filter((q) => q.tier === tier),
+    questions: DEMO_QUESTIONS.filter((q) => q.tier === tier),
   }));
 
   return (
@@ -104,7 +114,7 @@ export default function ComparisonView() {
               {grouped.map((g) => (
                 <optgroup key={g.label} label={g.label}>
                   {g.questions.map((q) => (
-                    <option key={q.id} value={EVAL_QUESTIONS.indexOf(q)}>
+                    <option key={q.id} value={DEMO_QUESTIONS.indexOf(q)}>
                       {q.id}: {q.q.slice(0, 80)}
                     </option>
                   ))}
@@ -112,11 +122,11 @@ export default function ComparisonView() {
               ))}
             </select>
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-3">
             <button
               onClick={() => {
-                const q = EVAL_QUESTIONS[selectedIdx];
-                runQuestion(q.q, q.id, q.expected);
+                const q = DEMO_QUESTIONS[selectedIdx];
+                runQuestion(q.q, q.id, q);
               }}
               disabled={loading}
               className="px-6 py-2 rounded-lg bg-[var(--bon)] text-white font-medium text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
@@ -137,7 +147,7 @@ export default function ComparisonView() {
               onChange={(e) => setCustomQ(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && customQ.trim()) {
-                  runQuestion(customQ, "Custom", "");
+                  runQuestion(customQ, "Custom", null);
                   setCustomQ("");
                 }
               }}
@@ -147,7 +157,7 @@ export default function ComparisonView() {
             <button
               onClick={() => {
                 if (customQ.trim()) {
-                  runQuestion(customQ, "Custom", "");
+                  runQuestion(customQ, "Custom", null);
                   setCustomQ("");
                 }
               }}
@@ -181,18 +191,22 @@ export default function ComparisonView() {
       {/* Side-by-side results */}
       {(baseline || bon || loading) && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <AgentPanel label="Baseline (SV Only — no business context)" response={baseline} color="var(--baseline)" />
-          <AgentPanel label="BON Agent (SV + Business Ontology)" response={bon} color="var(--bon)" />
+          <AgentPanel
+            label="Enriched SVs only (no Business Ontology)"
+            response={baseline} color="var(--baseline)" />
+          <AgentPanel label="Same enriched SVs + Business Ontology" response={bon} color="var(--bon)" />
         </div>
       )}
 
       {/* Expected answer */}
-      {currentQ?.expected && !loading && (baseline || bon) && (
-        <div className="mt-5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 px-5 py-4">
-          <div className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 mb-1">
+      {currentQ?.meta && !loading && (baseline || bon) && (
+        <div className="mt-5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950 px-5 py-4 text-sm space-y-1.5">
+          <div className="text-xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
             Expected Answer
           </div>
-          <p className="text-sm">{currentQ.expected}</p>
+          <p>{currentQ.meta.expected}</p>
+          {currentQ.meta.trap && <p className="text-[var(--text-muted)]"><strong>Plausible wrong answer:</strong> {currentQ.meta.trap}</p>}
+          {currentQ.meta.governed && <p className="text-[var(--text-muted)]"><strong>Governed by:</strong> {currentQ.meta.governed}</p>}
         </div>
       )}
     </div>

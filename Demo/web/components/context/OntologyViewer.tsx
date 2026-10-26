@@ -1,164 +1,181 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
+// Typed relationships from SAP_BON_V2 (05_bon.sql). Edge labels are BON relationship types.
 const BON_GRAPH = `graph LR
-    subgraph purchasing [PURCHASING]
-        Supplier -->|supplies| Material
-        Material -->|component_of| Assembly
-        PurchaseOrder -->|placed_with| Supplier
-        Carrier -->|fulfills| Shipment
-        Inspection -->|inspects| Material
+    subgraph proc [Procurement]
+        Supplier
+        Material
+        Assembly
+        BOM[Bill of Materials]
+        PO[Purchase Order]
+        SC[Supplier Count]:::metric
+        VRC[Vendor Record Count]:::metric
+        TIA[Tier A Supplier]
+        BCR[BOM Cost Rollup]:::metric
+        PVE[Probationary Vendor Exclusion]:::policy
+        BIP[BOM Input Protection]:::policy
+        PS[Procurement Spend]:::metric
     end
-    subgraph finance [FINANCE]
-        APPosting[AP_Posting]
-        CostCenter[Cost_Center]
+    subgraph fin [Finance and Controlling]
+        AP[AP Line Item]
+        PGM[Product Gross Margin]:::metric
+        CP[Customer Profit]:::metric
+        BED[Break-even Discount]:::metric
+        CMR[Credit Memo Sign Rule]:::policy
+        COGS[COGS Raw Materials]:::metric
     end
-    subgraph sales [SALES]
-        SalesOrder[Sales_Order]
-        PricingCond[Pricing_Conditions]
+    subgraph sales [Sales and Distribution]
+        SO[Sales Order]
+        Customer
+        REV[Revenue]:::metric
+        GB[Gross Bookings]:::metric
+        CD[Customer Discounts]:::metric
+        RAR[Revenue at Risk]:::metric
     end
-    PurchaseOrder -->|initiates| APPosting
-    APPosting -->|contributes_to| CostCenter
-    Assembly -->|sold_as| SalesOrder
-    PricingCond -->|governs_pricing| SalesOrder
-    SalesOrder -. gross margin .-> APPosting
+    Assembly -->|HAS_PART| BOM
+    BOM -->|HAS_PART| Material
+    PO -->|DERIVES| AP
+    SO -->|RELATED_TO| Assembly
+    SC -->|HAS_VARIANT| VRC
+    SC -->|MEASURES| Supplier
+    TIA -->|IS_A| Supplier
+    PVE -->|APPLIES_TO| SC
+    REV -->|HAS_VARIANT| GB
+    CD -->|DERIVES| REV
+    BOM -->|DERIVES| BCR
+    REV -->|DERIVES| PGM
+    BCR -->|DERIVES| PGM
+    REV -->|DERIVES| CP
+    BCR -->|DERIVES| CP
+    CP -->|MEASURES| Customer
+    BCR -->|DERIVES| BED
+    REV -->|DERIVES| RAR
+    BOM -->|DERIVES| RAR
+    RAR -->|MEASURES| Supplier
+    CMR -->|APPLIES_TO| COGS
+    BIP -->|APPLIES_TO| PS
+    classDef metric fill:#e0f2fe,stroke:#0284c7
+    classDef policy fill:#fef3c7,stroke:#d97706
 `;
 
-const FORMULAS = [
-  { name: "1. Canonical Supplier Count", formula: "COUNT(LIFNR) WHERE KTOKK IN ('ZSTR','ZSTD')", desc: "Excludes ZPRB probationary. 14 not 15.", domain: "Purchasing" },
-  { name: "2. Operational OTD", formula: "WADAT <= LFDAT WHERE STATU='D'", desc: "NOT carrier OTRAT (90%). Real: 66.7%.", domain: "Purchasing" },
-  { name: "3. Total Procurement Spend", formula: "SUM(EKPO.NETWR)", desc: "Use EKPO only. NOT LFB1.JWERT (contract values).", domain: "Purchasing" },
-  { name: "4. Weighted Supply Risk Score", formula: "0.4*single_src + 0.3*defect + 0.3*delivery", desc: "Fixed policy weights. LLM guesses wrong.", domain: "Purchasing" },
-  { name: "5. Supplier Disruption Cascade", formula: "Supplier->EKPO->STPO(recursive up)->Assemblies", desc: "Recursive BOM upward from affected materials.", domain: "Cross-Domain" },
-  { name: "6. BOM Cost Rollup", formula: "Recursive STPO downward, multiply qty, JOIN MARA.STPRS", desc: "Leaf material costs, not assembly STPRS.", domain: "Purchasing" },
-  { name: "7. COGS Raw Materials", formula: "BSEG: BSCHL=31 add, 34=subtract, HKONT=0040100000", desc: "Credit memo sign logic. $1.29M not $1.35M.", domain: "Finance" },
-  { name: "8. Product Gross Margin", formula: "VBAP revenue - (Formula 6 cost * units sold)", desc: "Cross-domain: Sales->BOM->Prices. No FK.", domain: "Cross-Domain" },
-  { name: "9. Discount Leakage", formula: "KONV WHERE KSCHL='K007' (not KF00)", desc: "K007=discount, KF00=surcharge.", domain: "Sales" },
-  { name: "10. Disruption Revenue Impact", formula: "Formula 5 assemblies -> VBAP.NETWR", desc: "5-hop cross-domain cascade to sales revenue.", domain: "Cross-Domain" },
-  { name: "11. Cost Center Total", formula: "COEP WHERE OBJNR=cost_object_code", desc: "KS-MFG-US=US Mfg, KS-LOG=Logistics.", domain: "Finance" },
+const CANONICAL = [
+  { term: "Supplier Count", impl: "FINANCE_ENRICHED_SV · vendors.active_supplier_count", variant: "Vendor Record Count (scope: Procurement operations)", value: "14" },
+  { term: "Revenue", impl: "SALES_ENRICHED_SV · net_revenue (derived)", variant: "Gross Bookings (scope: Sales pipeline)", value: "711,915" },
+  { term: "On-Time Delivery Rate", impl: "PURCHASING_ENRICHED_SV · shipments.operational_otd_rate", variant: "Carrier Reported On-Time Rate (scope: Carrier scorecard)", value: "66.7%" },
+  { term: "BOM Cost Rollup", impl: "PURCHASING_ENRICHED_SV · bom.bom_material_cost", variant: "not the assembly standard price STPRS", value: "286.60 (ASSY-004)" },
 ];
 
-const SAP_CODE_MAPPINGS = [
-  { code: "KTOKK", values: "ZSTR=Strategic, ZSTD=Standard, ZPRB=Probationary", domain: "Purchasing" },
-  { code: "MATKL", values: "043=Electronics, 044=Chemicals, 045=Metals...", domain: "Purchasing" },
-  { code: "BSCHL", values: "31=Invoice (positive), 34=Credit Memo (SUBTRACT)", domain: "Finance" },
-  { code: "HKONT", values: "0040100000=COGS Raw Mat, 0040200000=COGS Freight", domain: "Finance" },
-  { code: "KSCHL", values: "PR00=Base Price, K007=Discount, KF00=Surcharge", domain: "Sales" },
-  { code: "OBJNR", values: "KS-MFG-US/EU/AP=Manufacturing, KS-LOG, KS-QA", domain: "Finance" },
-  { code: "VKORG", values: "1000=Americas, 2000=EMEA, 3000=APAC", domain: "Sales" },
+const CROSS = [
+  { term: "Product Gross Margin", formula: "Revenue − BOM Cost Rollup × units", from: "Sales + Procurement" },
+  { term: "Customer Profit", formula: "Σ (Revenue − BOM Cost Rollup × units) per customer", from: "Sales + Procurement" },
+  { term: "Break-even Discount", formula: "1 − BOM Cost Rollup / list price", from: "Sales + Procurement" },
+  { term: "Revenue at Risk", formula: "Revenue of assemblies whose BOM contains the supplier's materials", from: "Procurement → Sales" },
 ];
 
-const RELATIONSHIPS = [
-  { source: "Supplier (LFA1)", rel: "supplies", target: "Material (MARA)", via: "EKPO.LIFNR/MATNR", domain: "Purchasing" },
-  { source: "Material", rel: "component_of", target: "Assembly", via: "STPO (recursive)", domain: "Purchasing" },
-  { source: "Carrier (LFA2)", rel: "fulfills", target: "Shipment (LIKP)", via: "CARRIER_ID", domain: "Purchasing" },
-  { source: "Inspection (QALS)", rel: "inspects", target: "Material (MARA)", via: "MATNR", domain: "Purchasing" },
-  { source: "PO (EKPO)", rel: "initiates", target: "AP Posting (BSEG)", via: "EBELN", domain: "Cross-Domain" },
-  { source: "AP Invoice (BSCHL=31)", rel: "contributes_to", target: "COGS (HKONT=0040100000)", via: "HKONT", domain: "Finance" },
-  { source: "Credit Memo (BSCHL=34)", rel: "reduces", target: "COGS", via: "must subtract", domain: "Finance" },
-  { source: "PO Spend", rel: "allocated_to", target: "Cost Center (COEP)", via: "material/plant", domain: "Cross-Domain" },
-  { source: "Assembly (MARA)", rel: "sold_as", target: "Sales Order (VBAP)", via: "MATNR (no direct FK to EKPO)", domain: "Cross-Domain" },
-  { source: "Discount (KONV K007)", rel: "reduces", target: "Revenue (VBAP)", via: "KSCHL=K007", domain: "Sales" },
-  { source: "Sales Revenue", rel: "minus COGS equals", target: "Gross Margin", via: "Formula 8", domain: "Cross-Domain" },
+const POLICIES = [
+  { term: "Probationary Vendor Exclusion", text: "ZPRB vendors are not active suppliers." },
+  { term: "Credit Memo Sign Rule", text: "BSCHL 34 credit memos are subtracted from every cost total." },
+  { term: "BOM Input Protection", text: "Never cut a material that is in the BOM of anything we sell." },
 ];
+
+const CODE_TERMS = [
+  { code: "KTOKK", term: "Vendor Account Group", ref: "T077K", col: "LFA1.KTOKK" },  // also defines company term "Tier A Supplier" = ZSTR
+  { code: "MATKL", term: "Material Group", ref: "T023T", col: "MARA.MATKL" },
+  { code: "BSCHL", term: "Posting Key", ref: "", col: "BSEG.BSCHL" },
+  { code: "HKONT", term: "GL Account", ref: "", col: "BSEG.HKONT" },
+  { code: "OBJNR", term: "Cost Object", ref: "", col: "COEP.OBJNR" },
+  { code: "KSCHL", term: "Condition Type", ref: "", col: "KONV.KSCHL" },
+  { code: "VKORG", term: "Sales Organization", ref: "", col: "VBAP.VKORG" },
+];
+
+const card = "px-3 py-2 rounded bg-[var(--bg)] border border-[var(--border)] text-xs";
+const heading = "text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2";
 
 export default function OntologyViewer() {
   const graphRef = useRef<HTMLDivElement>(null);
-  const [showFormulas, setShowFormulas] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     import("mermaid").then((m) => {
       m.default.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "strict" });
-      if (graphRef.current) {
-        graphRef.current.innerHTML = "";
-        m.default.render("bon-graph", BON_GRAPH).then(({ svg }) => {
-          if (graphRef.current) graphRef.current.innerHTML = svg;
-        });
-      }
+      // Unique id per render: React dev mode runs effects twice, and two renders sharing an id leave an empty SVG.
+      const id = `bon-graph-${Math.random().toString(36).slice(2)}`;
+      m.default.render(id, BON_GRAPH).then(({ svg }) => {
+        if (!cancelled && graphRef.current) graphRef.current.innerHTML = svg;
+      }).catch((e: unknown) => {
+        console.error("BON graph render failed", e);
+        if (!cancelled && graphRef.current) graphRef.current.textContent = `Graph failed to render: ${String(e)}`;
+      });
     });
+    return () => { cancelled = true; };
   }, []);
 
   return (
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-6 mt-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold">Business Ontology (BON)</h3>
-        <div className="flex gap-4 text-sm text-[var(--text-muted)]">
-          <span><strong className="text-[var(--text)]">11</strong> formulas</span>
-          <span><strong className="text-[var(--text)]">7</strong> code mappings</span>
-          <span><strong className="text-[var(--text)]">11</strong> relationships</span>
-          <span className="text-[var(--bon)]">3 domains (Purchasing, Finance, Sales)</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h3 className="text-lg font-semibold">Business Ontology: what the numbers mean</h3>
+        <div className="flex flex-wrap gap-4 text-sm text-[var(--text-muted)]">
+          <span><strong className="text-[var(--text)]">40</strong> approved nodes</span>
+          <span><strong className="text-[var(--text)]">51</strong> typed relationships</span>
+          <span><strong className="text-[var(--text)]">43</strong> representations</span>
+          <span className="text-[var(--bon)]">Procurement · Finance &amp; Controlling · Sales &amp; Distribution</span>
         </div>
       </div>
 
       <div className="bg-sky-50 dark:bg-sky-950 border border-sky-200 dark:border-sky-800 rounded-lg px-4 py-3 mb-5 text-sm">
-        The BON agent uses Snowflake&apos;s native <code className="text-xs">snowscope_search</code> with the
-        <code className="text-xs">businessOntology</code> corpus to find relevant SAP field code mappings, authoritative metric formulas,
-        and <strong>cross-domain relationship maps</strong> connecting Purchasing, Finance, and Sales.
-        The baseline agent has none of this context.
+        <strong>Ontology governs, semantic views execute.</strong> The BON agent has the <em>same</em> three enriched semantic views as
+        the baseline, plus native <code className="text-xs">snowscope_search</code> over the <code className="text-xs">businessOntology</code> corpus.
+        It looks up which metric is canonical, which policy applies, and how concepts connect across teams, then lets each
+        semantic view compute its part.
+      </div>
+
+      <h4 className={heading}>One definition, many implementations: canonical metric → implementing SV metric</h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-5">
+        {CANONICAL.map((c) => (
+          <div key={c.term} className={card}>
+            <div className="flex justify-between"><span className="font-semibold text-[var(--bon)] text-sm">{c.term}</span><span className="font-mono">{c.value}</span></div>
+            <div className="mt-1"><span className="text-[var(--text-muted)]">IMPLEMENTS:</span> <span className="font-mono">{c.impl}</span></div>
+            <div><span className="text-[var(--text-muted)]">HAS_VARIANT:</span> {c.variant}</div>
+          </div>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-        {/* Relationships */}
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            Entity Relationships (11)
-          </h4>
+          <h4 className={heading}>Cross-domain metrics ({CROSS.length})</h4>
           <div className="space-y-1">
-            {RELATIONSHIPS.map((r, i) => (
-              <div key={i} className="px-3 py-1.5 rounded bg-[var(--bg)] border border-[var(--border)] text-xs">
-                <span className="font-mono">{r.source}</span>
-                <span className="mx-1 text-[var(--bon)]">--[{r.rel}]--&gt;</span>
-                <span className="font-mono">{r.target}</span>
-                <span className="text-[var(--text-muted)] ml-1">via {r.via}</span>
+            {CROSS.map((c) => (
+              <div key={c.term} className={card}>
+                <span className="font-semibold">{c.term}</span>
+                <p className="font-mono text-[var(--text-muted)] mt-0.5">{c.formula}</p>
+                <p className="text-[var(--text-muted)]">{c.from}</p>
               </div>
             ))}
           </div>
         </div>
-
-        {/* SAP Code Mappings */}
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            SAP Code Mappings (7)
-          </h4>
+          <h4 className={heading}>Policies ({POLICIES.length})</h4>
           <div className="space-y-1">
-            {SAP_CODE_MAPPINGS.map((d) => (
-              <div key={d.code} className="px-3 py-1.5 rounded bg-[var(--bg)] border border-[var(--border)] text-xs">
-                <span className="font-mono font-semibold">{d.code}</span>
-                <span className="ml-2 text-[var(--text-muted)]">{d.values}</span>
-              </div>
+            {POLICIES.map((p) => (
+              <div key={p.term} className={card}><span className="font-semibold">{p.term}</span><p className="text-[var(--text-muted)] mt-0.5">{p.text}</p></div>
             ))}
           </div>
         </div>
-
-        {/* Formulas */}
         <div>
-          <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-            Authoritative Formulas (11)
-            <button onClick={() => setShowFormulas(!showFormulas)} className="ml-2 text-[var(--bon)] font-normal normal-case">
-              {showFormulas ? "collapse" : "expand"}
-            </button>
-          </h4>
-          {showFormulas ? (
-            <div className="space-y-1">
-              {FORMULAS.map((f) => (
-                <div key={f.name} className="px-3 py-2 rounded bg-[var(--bg)] border border-[var(--border)] text-sm">
-                  <span className="font-semibold text-[var(--bon)]">{f.name}</span>
-                  <p className="text-xs font-mono text-[var(--text-muted)] mt-0.5">{f.formula}</p>
-                  <p className="text-xs text-[var(--text-muted)] mt-0.5">{f.desc}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--text-muted)]">
-              Canonical Supplier Count, Operational OTD, Procurement Spend, Risk Score, Disruption Cascade, Cost Rollup
-            </p>
-          )}
+          <h4 className={heading}>Code-mapping terms ({CODE_TERMS.length}): one per code field</h4>
+          <div className="space-y-1">
+            {CODE_TERMS.map((d) => (
+              <div key={d.code} className={card}>
+                <span className="font-mono font-semibold">{d.code}</span> <span>{d.term}</span>
+                <span className="text-[var(--text-muted)] ml-1">→ {d.col}{d.ref ? ` · codes in ${d.ref}` : ""}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      <h4 className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
-        Entity Relationship Graph
-      </h4>
+      <h4 className={heading}>Ontology graph (edges are BON relationship types · blue = metric · amber = policy)</h4>
       <div ref={graphRef} className="overflow-x-auto" />
     </div>
   );

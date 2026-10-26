@@ -10,7 +10,7 @@ async function createConnection(): Promise<snowflake.Connection> {
     role: process.env.SNOWFLAKE_ROLE || "ACCOUNTADMIN",
     warehouse: process.env.SNOWFLAKE_WAREHOUSE || "COMPUTE_WH",
     database: process.env.SNOWFLAKE_DATABASE || "DB_ONTOLOGY_CONTROL_PLANE",
-    schema: process.env.SNOWFLAKE_SCHEMA || "SAP_PRODUCTION",
+    schema: process.env.SNOWFLAKE_SCHEMA || "SAP_BON_V2",
   });
 
   await conn.connectAsync((err) => {

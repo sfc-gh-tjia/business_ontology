@@ -2,6 +2,7 @@ export interface AgentResponse {
   text: string;
   htmlArtifacts: string[];
   elapsed: number;
+  tools?: string[];
 }
 
 export interface ComparisonResult {
@@ -17,6 +18,8 @@ export interface EvalQuestion {
   q: string;
   expected: string;
   tier: string;
+  trap?: string;
+  governed?: string;
 }
 
 export interface BonTerm {
